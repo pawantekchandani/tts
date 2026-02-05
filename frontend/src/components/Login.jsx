@@ -32,7 +32,7 @@ export default function Login({ onSuccess, onSwitchToRegister, onSwitchToForgotP
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
       <div className="bg-gray-900 rounded-lg shadow-2xl p-8 w-full max-w-md border border-gray-800">
-        <h2 className="text-3xl font-bold text-center text-orange-500 mb-8">Login</h2>
+        <h2 className="text-3xl font-bold text-center text-green-500 mb-8">Login</h2>
 
         {error && (
           <div className="bg-red-900/50 border border-red-500 text-red-200 px-4 py-3 rounded mb-4">
