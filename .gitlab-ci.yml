@@ -23,7 +23,7 @@ deploy_to_milesweb:
     - apk add lftp
     # Note: We now use the path from the 'frontend' subfolder
     - lftp -e "set ftp:ssl-allow no; open $FTP_SERVER; user $FTP_USERNAME $FTP_PASSWORD; 
-      mirror -R frontend/dist/ public_html/; 
+      mirror -R frontend/dist/ tts.testingprojects.online/;
       mirror -R backend/ tts_app/backend/; 
       quit"
   only:
