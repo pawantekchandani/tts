@@ -1,0 +1,30 @@
+stages:
+  - build
+  - deploy
+
+# 1. Build the React Frontend
+build_frontend:
+  stage: build
+  image: node:18
+  script:
+    - npm install
+    - npm run build
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
+
+# 2. Upload to MilesWeb
+deploy_to_milesweb:
+  stage: deploy
+  image: alpine:latest
+  script:
+    - apk add lftp
+    # Connect using variables from image_dcb72f.jpg
+    # Sync to correct folders based on image_dcac23.png
+    - lftp -e "set ftp:ssl-allow no; open $FTP_SERVER; user $FTP_USERNAME $FTP_PASSWORD; 
+      mirror -R dist/ public_html/; 
+      mirror -R backend/ tts_app/backend/; 
+      quit"
+  only:
+    - main
