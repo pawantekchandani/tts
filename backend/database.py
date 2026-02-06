@@ -1,9 +1,9 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event  # <--- Updated import
 from sqlalchemy.orm import declarative_base, sessionmaker
 from dotenv import load_dotenv
 import os
 from pathlib import Path
-import logging  # <--- NEW: Import logging
+import logging
 
 # --- 1. SETUP LOGGER FOR DATABASE ---
 # This ensures DB errors also go to the same 'app_errors.log' file
@@ -36,6 +36,14 @@ try:
         pool_pre_ping=True,
         connect_args={"charset": "utf8mb4"}
     )
+    
+    # 100% Force UTF-8 on every new connection
+    @event.listens_for(engine, "connect")
+    def set_utf8mb4_encoding(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("SET NAMES 'utf8mb4'")
+        cursor.execute("SET CHARACTER SET utf8mb4")
+        cursor.close()
     
     # Optional: Test connection immediately to catch errors early
     with engine.connect() as connection:
