@@ -100,14 +100,27 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     )
     payload = verify_token(token)
     if payload is None:
+        logger.warning("Token verification failed (payload is None)")
         raise credentials_exception
-    user_id: str = payload.get("sub")
-    if user_id is None:
+        
+    user_id_str: str = payload.get("sub")
+    if user_id_str is None:
+        logger.warning("Token payload missing 'sub' (user_id)")
         raise credentials_exception
+        
+    try:
+        user_id = int(user_id_str)
+    except ValueError:
+         logger.warning(f"Token 'sub' is not a valid integer: {user_id_str}")
+         raise credentials_exception
+
+    logger.info(f"Authenticated Request for User ID: {user_id}")
         
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
+        logger.warning(f"User ID {user_id} not found in database")
         raise credentials_exception
+        
     return user
 
 @app.get("/health")
