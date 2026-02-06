@@ -27,7 +27,7 @@ export default function Dashboard() {
   const fetchDownloads = async () => {
     try {
       const token = authAPI.getToken();
-      const response = await axios.get(`${API_BASE_URL}/downloads`, {
+      const response = await axios.get(`${API_BASE_URL}/api/downloads`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setDownloads(response.data);
@@ -39,7 +39,7 @@ export default function Dashboard() {
   const fetchHistory = async () => {
     try {
       const token = authAPI.getToken();
-      const response = await axios.get(`${API_BASE_URL}/history`, {
+      const response = await axios.get(`${API_BASE_URL}/api/history`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -56,8 +56,8 @@ export default function Dashboard() {
       setHistory(formattedHistory);
     } catch (error) {
       console.error("Failed to fetch history:", error);
-      // Optional: setHistory([]) on error to be safe? 
-      // setHistory([]); // Let's keep existing history if fetch fails? Or clear it? 
+      // Optional: setHistory([]) on error to be safe?
+      // setHistory([]); // Let's keep existing history if fetch fails? Or clear it?
       // User says "populate exclusively from fetch", so maybe clear it.
     }
   };
@@ -76,7 +76,7 @@ export default function Dashboard() {
     try {
       const token = authAPI.getToken();
       const response = await axios.post(
-        `${API_BASE_URL}/convert`,
+        `${API_BASE_URL}/api/convert`,
         { text, voice_id: voice, engine },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -102,8 +102,8 @@ export default function Dashboard() {
       const errorMessage = error.response?.data?.detail || 'Conversion failed. Please try again.';
 
       // Don't alert if the conversion actually worked but history fetch failed
-      // Check if we have a valid response despite the catch block? 
-      // Actually, if await fetchHistory() fails, it throws here. 
+      // Check if we have a valid response despite the catch block?
+      // Actually, if await fetchHistory() fails, it throws here.
       // We should isolate the history fetch error from the conversion error.
 
       alert(`Error: ${errorMessage}`);
@@ -212,7 +212,7 @@ export default function Dashboard() {
                               if (!confirm('Are you sure you want to delete this file?')) return;
                               try {
                                 const token = authAPI.getToken();
-                                await axios.delete(`${API_BASE_URL}/downloads/${item.id}`, {
+                                await axios.delete(`${API_BASE_URL}/api/downloads/${item.id}`, {
                                   headers: { Authorization: `Bearer ${token}` }
                                 });
                                 setDownloads(prev => prev.filter(d => d.id !== item.id));

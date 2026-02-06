@@ -214,7 +214,7 @@ def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db))
 
 # --- CONTENT ROUTES ---
 
-@app.post("/convert", response_model=ConversionOut)
+@app.post("/api/convert", response_model=ConversionOut)
 def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if not conversion.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
@@ -267,7 +267,7 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
         logger.error(f"AWS Polly Conversion Failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/history", response_model=list[ConversionOut])
+@app.get("/api/history", response_model=list[ConversionOut])
 def get_history(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     logger.info(f"Fetching history for User ID: {current_user.id} ({current_user.email})")
     conversions = db.query(Conversion).filter(Conversion.user_id == current_user.id).order_by(Conversion.created_at.desc()).all()
@@ -287,7 +287,7 @@ def get_history(db: Session = Depends(get_db), current_user: User = Depends(get_
         ))
     return results
 
-@app.post("/history", response_model=ConversionOut)
+@app.post("/api/history", response_model=ConversionOut)
 def save_history(conversion: ConversionCreate, audio_url: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     # This endpoint allows manual saving of history if generation is separated.
     # Note: /convert already saves history.
@@ -317,7 +317,6 @@ def save_history(conversion: ConversionCreate, audio_url: str, db: Session = Dep
 
 # --- DUAL ROUTE SUPPORT FOR DOWNLOADS ---
 
-@app.post("/downloads", response_model=DownloadOut)
 @app.post("/api/downloads", response_model=DownloadOut)
 def save_download(download: DownloadCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
@@ -342,13 +341,11 @@ def save_download(download: DownloadCreate, db: Session = Depends(get_db), curre
         logger.error(f"Error saving download: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to save download record")
 
-@app.get("/downloads", response_model=list[DownloadOut])
 @app.get("/api/downloads", response_model=list[DownloadOut])
 def get_downloads(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     downloads = db.query(DownloadedFile).filter(DownloadedFile.user_id == current_user.id).order_by(DownloadedFile.downloaded_at.desc()).all()
     return [DownloadOut(id=d.id, filename=d.filename, audio_url=d.audio_url, downloaded_at=d.downloaded_at.isoformat()) for d in downloads]
 
-@app.delete("/downloads/{download_id}")
 @app.delete("/api/downloads/{download_id}")
 def delete_download(download_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     user = current_user
