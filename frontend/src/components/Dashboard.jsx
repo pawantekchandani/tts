@@ -81,15 +81,31 @@ export default function Dashboard() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      setAudioUrl(newAudioUrl);
+      // Add to history using the response data
+      const newHistoryItem = {
+        ...response.data,
+        voice: response.data.voice_name || voice, // Use backend voice name or local state
+        audio_url: response.data.audio_url // Ensure full URL if needed, though response might have relative
+      };
 
-      // FIX: Instead of manually adding to the list (which caused duplicates),
-      // we will straightforwardly fetch the latest history from the server.
-      // This ensures the UI always matches the Database exactly (Sync Source of Truth).
-      await fetchHistory();
+      setAudioUrl(response.data.audio_url); // Use the audio_url from the new history item
+
+      try {
+        await fetchHistory();
+      } catch (historyError) {
+        console.warn("Conversion successful, but failed to refresh history:", historyError);
+        // Do NOT alert the user, as the main task (speech) worked.
+      }
+
     } catch (error) {
       console.error("Dashboard handleConvert Error:", error);
       const errorMessage = error.response?.data?.detail || 'Conversion failed. Please try again.';
+
+      // Don't alert if the conversion actually worked but history fetch failed
+      // Check if we have a valid response despite the catch block? 
+      // Actually, if await fetchHistory() fails, it throws here. 
+      // We should isolate the history fetch error from the conversion error.
+
       alert(`Error: ${errorMessage}`);
     } finally {
       setIsLoading(false);
