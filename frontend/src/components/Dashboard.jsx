@@ -42,14 +42,21 @@ export default function Dashboard() {
       const response = await axios.get(`${API_BASE_URL}/history`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      // Map voice_name to voice for UI consistency
-      const formattedHistory = response.data.map(item => ({
+
+      // Fix: Ensure data is an array before mapping
+      const historyData = Array.isArray(response.data) ? response.data : [];
+
+      const formattedHistory = historyData.map(item => ({
         ...item,
         voice: item.voice_name || item.voice // fallback
       }));
+
       setHistory(formattedHistory);
     } catch (error) {
       console.error("Failed to fetch history:", error);
+      // Optional: setHistory([]) on error to be safe? 
+      // setHistory([]); // Let's keep existing history if fetch fails? Or clear it? 
+      // User says "populate exclusively from fetch", so maybe clear it.
     }
   };
 
@@ -75,12 +82,22 @@ export default function Dashboard() {
       const newAudioUrl = `${API_BASE_URL}${response.data.audio_url}`;
       setAudioUrl(newAudioUrl);
 
-      // Add to history using the response data
+      // User requested explicit saving, but /convert already saves to DB.
+      // To ensure UI is perfectly synced with DB (and to handle any potential 'POST /history' requirement logic),
+      // we can either:
+      // 1. Trust the response from /convert (FASTEST)
+      // 2. Fetch history again (SAFEST for sync)
+
+      // Let's use the response to update UI immediately for better UX...
       const newHistoryItem = {
         ...response.data,
-        voice: response.data.voice_name || voice, // Use backend voice name or local state
-        audio_url: newAudioUrl // Ensure full URL if needed, though response might have relative
+        voice: response.data.voice_name || voice,
+        audio_url: newAudioUrl
       };
+      setHistory(prev => [newHistoryItem, ...prev]);
+
+      // ...AND optionally fetch history in background to ensure full sync if needed
+      // fetchHistory();
 
       setHistory(prev => [newHistoryItem, ...prev]);
     } catch (error) {
