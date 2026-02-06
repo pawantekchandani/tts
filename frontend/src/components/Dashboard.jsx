@@ -353,7 +353,8 @@ export default function Dashboard() {
 
                         // Save to backend
                         const token = authAPI.getToken();
-                        await axios.post(`${API_BASE_URL}/downloads`, {
+                        // Fix 405 Method Not Allowed: Use updated /api/downloads path
+                        await axios.post(`${API_BASE_URL}/api/downloads`, {
                           filename: fileName,
                           audio_url: audioUrl
                         }, {
