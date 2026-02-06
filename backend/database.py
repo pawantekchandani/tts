@@ -38,7 +38,7 @@ try:
         pool_pre_ping=True,      # Query run karne se pehle check karega ki connection active hai ya nahi
         pool_size=10,            # 10 connections ka pool banayega
         max_overflow=20,         # Zarurat padne par 20 extra connections allow karega
-        connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
+        connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {"charset": "utf8mb4"}
     )
     
     # Optional: Test connection immediately to catch errors early
