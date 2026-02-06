@@ -18,6 +18,7 @@ class Conversion(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     text = Column(Text)
+    voice_name = Column(String(100), default="Joanna")
     audio_url = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     user_id = Column(Integer, ForeignKey("users.id"))

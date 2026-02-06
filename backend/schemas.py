@@ -43,6 +43,7 @@ class ConversionCreate(BaseModel):
 class ConversionOut(BaseModel):
     id: int
     text: str
+    voice_name: Optional[str] = None
     audio_url: str
     created_at: str
     

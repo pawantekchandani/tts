@@ -231,16 +231,73 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
             f.write(response['AudioStream'].read())
             
         audio_url = f"/static/audio/{month_year}/{filename}"
-        db_conversion = Conversion(text=conversion.text, audio_url=audio_url, user_id=current_user.id, created_at=now)
+        db_conversion = Conversion(
+            text=conversion.text, 
+            audio_url=audio_url, 
+            voice_name=conversion.voice_id, 
+            user_id=current_user.id, 
+            created_at=now
+        )
         db.add(db_conversion)
         db.commit()
         db.refresh(db_conversion)
         
         logger.info(f"Conversion successful. Audio saved at: {audio_url}")
-        return ConversionOut(id=db_conversion.id, text=db_conversion.text, audio_url=audio_url, created_at=db_conversion.created_at.isoformat())
+        return ConversionOut(
+            id=db_conversion.id, 
+            text=db_conversion.text, 
+            voice_name=db_conversion.voice_name,
+            audio_url=audio_url, 
+            created_at=db_conversion.created_at.isoformat()
+        )
     except Exception as e:
         logger.error(f"AWS Polly Conversion Failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/history", response_model=list[ConversionOut])
+def get_history(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    conversions = db.query(Conversion).filter(Conversion.user_id == current_user.id).order_by(Conversion.created_at.desc()).all()
+    # Ensure all required fields are present; default voice_name if missing in old records
+    results = []
+    for c in conversions:
+        if not c.voice_name:
+            c.voice_name = "Unknown" 
+        results.append(ConversionOut(
+            id=c.id,
+            text=c.text,
+            voice_name=c.voice_name,
+            audio_url=c.audio_url,
+            created_at=c.created_at.isoformat()
+        ))
+    return results
+
+@app.post("/history", response_model=ConversionOut)
+def save_history(conversion: ConversionCreate, audio_url: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # This endpoint allows manual saving of history if generation is separated.
+    # Note: /convert already saves history.
+    try:
+        now = datetime.utcnow()
+        db_conversion = Conversion(
+            text=conversion.text,
+            audio_url=audio_url,
+            voice_name=conversion.voice_id,
+            user_id=current_user.id,
+            created_at=now
+        )
+        db.add(db_conversion)
+        db.commit()
+        db.refresh(db_conversion)
+        logger.info(f"History manually saved for user {current_user.email}")
+        return ConversionOut(
+            id=db_conversion.id,
+            text=db_conversion.text,
+            voice_name=db_conversion.voice_name,
+            audio_url=db_conversion.audio_url,
+            created_at=db_conversion.created_at.isoformat()
+        )
+    except Exception as e:
+        logger.error(f"Failed to save history: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save history")
 
 # --- DUAL ROUTE SUPPORT FOR DOWNLOADS ---
 
