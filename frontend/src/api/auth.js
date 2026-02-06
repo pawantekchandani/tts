@@ -8,6 +8,22 @@ const axiosInstance = axios.create({
   timeout: 10000,
 })
 
+// NEW: Interceptor to handle session expiration (401) automatically
+axiosInstance.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      // Token expired or invalid -> Logout user
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('user_email');
+      localStorage.removeItem('conversionHistory');
+      // Redirect to login (App.jsx will see no token and show Login)
+      window.location.href = '/';
+    }
+    return Promise.reject(error);
+  }
+);
+
 export const authAPI = {
   signup: async (email, password) => {
     try {
