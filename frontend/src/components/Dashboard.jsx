@@ -21,6 +21,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchDownloads();
+    fetchHistory();
   }, []);
 
   const fetchDownloads = async () => {
@@ -31,21 +32,28 @@ export default function Dashboard() {
       });
       setDownloads(response.data);
     } catch (error) {
+      console.error("Failed to fetch downloads:", error);
     }
   };
 
-  const [history, setHistory] = useState(() => {
+  const fetchHistory = async () => {
     try {
-      const saved = localStorage.getItem('conversionHistory');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
+      const token = authAPI.getToken();
+      const response = await axios.get(`${API_BASE_URL}/history`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      // Map voice_name to voice for UI consistency
+      const formattedHistory = response.data.map(item => ({
+        ...item,
+        voice: item.voice_name || item.voice // fallback
+      }));
+      setHistory(formattedHistory);
+    } catch (error) {
+      console.error("Failed to fetch history:", error);
     }
-  });
+  };
 
-  useEffect(() => {
-    localStorage.setItem('conversionHistory', JSON.stringify(history));
-  }, [history]);
+  const [history, setHistory] = useState([]);
 
   useEffect(() => {
     setVoice(engine === 'neural' ? 'Kajal' : 'Aditi');
@@ -67,16 +75,14 @@ export default function Dashboard() {
       const newAudioUrl = `${API_BASE_URL}${response.data.audio_url}`;
       setAudioUrl(newAudioUrl);
 
-      setHistory(prev => [
-        {
-          id: response.data.id,
-          text,
-          voice,
-          audio_url: newAudioUrl,
-          created_at: new Date().toLocaleDateString(),
-        },
-        ...prev,
-      ]);
+      // Add to history using the response data
+      const newHistoryItem = {
+        ...response.data,
+        voice: response.data.voice_name || voice, // Use backend voice name or local state
+        audio_url: newAudioUrl // Ensure full URL if needed, though response might have relative
+      };
+
+      setHistory(prev => [newHistoryItem, ...prev]);
     } catch (error) {
       const errorMessage = error.response?.data?.detail || 'Conversion failed. Please try again.';
       alert(`Error: ${errorMessage}`);
