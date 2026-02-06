@@ -224,6 +224,7 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
 
     try:
         logger.info(f"Starting conversion for user {current_user.email}. Text length: {len(conversion.text)}")
+        print(f"Received Text for DB: {conversion.text.encode('utf-8')}")
         
         response = polly_client.synthesize_speech(
             Text=conversion.text,
