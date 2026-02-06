@@ -5,3 +5,6 @@ __pycache__/
 .venv/
 .vscode/
 .idea/
+
+*.log
+backend/app_errors.log
