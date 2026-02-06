@@ -88,6 +88,7 @@ export default function Dashboard() {
       // This ensures the UI always matches the Database exactly (Sync Source of Truth).
       await fetchHistory();
     } catch (error) {
+      console.error("Dashboard handleConvert Error:", error);
       const errorMessage = error.response?.data?.detail || 'Conversion failed. Please try again.';
       alert(`Error: ${errorMessage}`);
     } finally {
