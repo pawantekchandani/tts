@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, UnicodeText
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
@@ -17,7 +17,10 @@ class Conversion(Base):
     __tablename__ = "conversions"
     
     id = Column(Integer, primary_key=True, index=True)
-    text = Column(Text)
+    
+    # FIXED: Changed from 'Text' to 'UnicodeText' to fix the '????' issue
+    text = Column(UnicodeText)
+    
     voice_name = Column(String(100), default="Joanna")
     audio_url = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -26,7 +29,6 @@ class Conversion(Base):
     user = relationship("User", back_populates="conversions")
 
 class DownloadedFile(Base):
-    # FIXED: Table name changed to match your MySQL database
     __tablename__ = "downloaded_files" 
     
     id = Column(Integer, primary_key=True, index=True)
