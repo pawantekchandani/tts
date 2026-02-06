@@ -1,5 +1,6 @@
-import logging  # <--- NEW: For logging
-import sys      # <--- NEW: For terminal output
+import sentry_sdk # <--- NEW: Sentry SDK
+import logging
+import sys
 from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
@@ -21,35 +22,51 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# --- 1. LOGGING CONFIGURATION (Setup 'app_errors.log') ---
+# --- 1. SENTRY CONFIGURATION ---
+# Initialize Sentry at the very top for complete coverage
+sentry_sdk.init(
+    dsn="https://802e0792557423aef70c6a49dfe32404@o4510838171107328.ingest.us.sentry.io/4510838173925376",
+    traces_sample_rate=1.0,
+    send_default_pii=True
+)
+
+# --- 2. LOGGING CONFIGURATION ---
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler("app_errors.log"),  # Write to file
-        logging.StreamHandler(sys.stdout)       # Write to terminal
+        logging.FileHandler("app_errors.log"),
+        logging.StreamHandler(sys.stdout)
     ]
 )
 logger = logging.getLogger(__name__)
 
-# Load environment variables
 load_dotenv(Path(__file__).parent / ".env")
 
 app = FastAPI()
 
-# --- 2. GLOBAL ERROR CATCHER (Middleware) ---
-# This catches any crash, anywhere in the app, and logs it.
+# --- 3. SENTRY DEBUG ROUTE ---
+# Visit https://testingprojects.online/api/debug-sentry to test
+@app.get("/api/debug-sentry")
+async def trigger_error():
+    division_by_zero = 1 / 0
+    return {"message": "Should not reach here"}
+
+# --- 4. GLOBAL ERROR CATCHER ---
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     try:
         response = await call_next(request)
         return response
     except Exception as e:
+        # Note: Sentry captures this automatically now!
         logger.error(f"CRITICAL ERROR in {request.url.path}: {str(e)}", exc_info=True)
         return JSONResponse(
             status_code=500,
-            content={"detail": "Internal Server Error. Please check logs."}
+            content={"detail": "Internal Server Error. Please check logs/Sentry."}
         )
+
+# --- REST OF YOUR ORIGINAL CODE (No changes below) ---
 
 # AWS Polly Client Configuration
 try:
@@ -274,7 +291,6 @@ def get_history(db: Session = Depends(get_db), current_user: User = Depends(get_
     conversions = db.query(Conversion).filter(Conversion.user_id == current_user.id).order_by(Conversion.created_at.desc()).all()
     logger.info(f"Found {len(conversions)} records for User ID {current_user.id}")
     
-    # Ensure all required fields are present; default voice_name if missing in old records
     results = []
     for c in conversions:
         if not c.voice_name:
@@ -290,8 +306,6 @@ def get_history(db: Session = Depends(get_db), current_user: User = Depends(get_
 
 @app.post("/api/history", response_model=ConversionOut)
 def save_history(conversion: ConversionCreate, audio_url: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # This endpoint allows manual saving of history if generation is separated.
-    # Note: /convert already saves history.
     try:
         now = datetime.utcnow()
         db_conversion = Conversion(
@@ -315,8 +329,6 @@ def save_history(conversion: ConversionCreate, audio_url: str, db: Session = Dep
     except Exception as e:
         logger.error(f"Failed to save history: {e}")
         raise HTTPException(status_code=500, detail="Failed to save history")
-
-# --- DUAL ROUTE SUPPORT FOR DOWNLOADS ---
 
 @app.post("/api/downloads", response_model=DownloadOut)
 def save_download(download: DownloadCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
