@@ -256,7 +256,10 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
 
 @app.get("/history", response_model=list[ConversionOut])
 def get_history(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    logger.info(f"Fetching history for User ID: {current_user.id} ({current_user.email})")
     conversions = db.query(Conversion).filter(Conversion.user_id == current_user.id).order_by(Conversion.created_at.desc()).all()
+    logger.info(f"Found {len(conversions)} records for User ID {current_user.id}")
+    
     # Ensure all required fields are present; default voice_name if missing in old records
     results = []
     for c in conversions:
@@ -267,7 +270,7 @@ def get_history(db: Session = Depends(get_db), current_user: User = Depends(get_
             text=c.text,
             voice_name=c.voice_name,
             audio_url=c.audio_url,
-            created_at=c.created_at.isoformat()
+            created_at=c.created_at.isoformat() if c.created_at else datetime.now().isoformat()
         ))
     return results
 
