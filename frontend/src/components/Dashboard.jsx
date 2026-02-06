@@ -45,6 +45,8 @@ export default function Dashboard() {
 
       // Fix: Ensure data is an array before mapping
       const historyData = Array.isArray(response.data) ? response.data : [];
+      console.log("Fetched history from DB:", historyData.length, "records");
+
 
       const formattedHistory = historyData.map(item => ({
         ...item,
@@ -79,27 +81,12 @@ export default function Dashboard() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      const newAudioUrl = `${API_BASE_URL}${response.data.audio_url}`;
       setAudioUrl(newAudioUrl);
 
-      // User requested explicit saving, but /convert already saves to DB.
-      // To ensure UI is perfectly synced with DB (and to handle any potential 'POST /history' requirement logic),
-      // we can either:
-      // 1. Trust the response from /convert (FASTEST)
-      // 2. Fetch history again (SAFEST for sync)
-
-      // Let's use the response to update UI immediately for better UX...
-      const newHistoryItem = {
-        ...response.data,
-        voice: response.data.voice_name || voice,
-        audio_url: newAudioUrl
-      };
-      setHistory(prev => [newHistoryItem, ...prev]);
-
-      // ...AND optionally fetch history in background to ensure full sync if needed
-      // fetchHistory();
-
-      setHistory(prev => [newHistoryItem, ...prev]);
+      // FIX: Instead of manually adding to the list (which caused duplicates),
+      // we will straightforwardly fetch the latest history from the server.
+      // This ensures the UI always matches the Database exactly (Sync Source of Truth).
+      await fetchHistory();
     } catch (error) {
       const errorMessage = error.response?.data?.detail || 'Conversion failed. Please try again.';
       alert(`Error: ${errorMessage}`);
