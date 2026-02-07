@@ -25,7 +25,7 @@ class UserCreate(BaseModel):
         return v
 
 class UserOut(BaseModel):
-    id: int
+    id: str
     email: str
     
     class Config:
