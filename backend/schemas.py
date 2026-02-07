@@ -66,16 +66,5 @@ class ResetPasswordRequest(BaseModel):
             raise ValueError('Password must be at least 6 characters')
         return v
 
-class DownloadCreate(BaseModel):
-    filename: str
-    audio_url: str
 
-class DownloadOut(BaseModel):
-    id: int
-    filename: str
-    audio_url: str
-    downloaded_at: str
-    
-    class Config:
-        from_attributes = True
 

@@ -1,10 +1,13 @@
 import axios from 'axios'
 
 // Ensure we use the production domain with the /api prefix
-const API_BASE_URL = "https://tts.testingprojects.online/api"
+// Use environment variable for API URL or default to production
+// Use environment variable for API URL or default to production
+const BASE_URL = import.meta.env.VITE_API_URL || "https://tts.testingprojects.online"
+const API_BASE_URL = `${BASE_URL}/api`
 
 // Add timeout to axios requests
-const axiosInstance = axios.create({
+export const axiosInstance = axios.create({
   timeout: 10000,
 })
 

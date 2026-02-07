@@ -40,7 +40,7 @@ if "charset=utf8mb4" not in DATABASE_URL:
     else:
         DATABASE_URL += "?charset=utf8mb4"
 
-ा
+
 logger.info("Database URL loaded successfully (Password hidden).")
 
 try:

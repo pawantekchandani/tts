@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LogOut, Play, Download, Loader, Sparkles, FileText, Music, Trash2, Maximize2, X } from 'lucide-react';
-import { authAPI } from '../api/auth';
+import { authAPI, axiosInstance as axios } from '../api/auth';
 import VoiceSelector from './VoiceSelector';
 import AudioVisualizer from './AudioVisualizer';
-import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:8000`;
 
@@ -21,7 +20,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchDownloads();
-    fetchHistory();
+    fetchHistory(true);
   }, []);
 
   const fetchDownloads = async () => {
@@ -36,37 +35,56 @@ export default function Dashboard() {
     }
   };
 
-  const fetchHistory = async () => {
-    try {
-      const token = authAPI.getToken();
-      const response = await axios.get(`${API_BASE_URL}/api/history`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      // Fix: Ensure data is an array before mapping
-      const historyData = Array.isArray(response.data) ? response.data : [];
-      console.log("Fetched history from DB:", historyData.length, "records");
-
-
-      const formattedHistory = historyData.map(item => ({
-        ...item,
-        voice: item.voice_name || item.voice // fallback
-      }));
-
-      setHistory(formattedHistory);
-    } catch (error) {
-      console.error("Failed to fetch history:", error);
-      // Optional: setHistory([]) on error to be safe?
-      // setHistory([]); // Let's keep existing history if fetch fails? Or clear it?
-      // User says "populate exclusively from fetch", so maybe clear it.
-    }
-  };
-
   const [history, setHistory] = useState([]);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   useEffect(() => {
     setVoice(engine === 'neural' ? 'Kajal' : 'Aditi');
   }, [engine]);
+
+  const fetchHistory = async (reset = false) => {
+    if (loadingHistory) return;
+    if (!reset && !hasMore) return;
+
+    setLoadingHistory(true);
+    try {
+      const token = authAPI.getToken();
+      const currentPage = reset ? 0 : page;
+      const limit = 10;
+
+      const response = await axios.get(`${API_BASE_URL}/api/history`, {
+        params: { skip: currentPage * limit, limit },
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      const historyData = Array.isArray(response.data) ? response.data : [];
+      console.log(`Fetched history page ${currentPage}:`, historyData.length, "records");
+
+      const formattedHistory = historyData.map(item => ({
+        ...item,
+        voice: item.voice_name || item.voice
+      }));
+
+      if (reset) {
+        setHistory(formattedHistory);
+        setPage(1);
+      } else {
+        setHistory(prev => [...prev, ...formattedHistory]);
+        setPage(prev => prev + 1);
+      }
+
+      setHasMore(historyData.length === limit);
+
+    } catch (error) {
+      console.error("Failed to fetch history:", error);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+
 
   const handleConvert = async () => {
     if (!text) return;
@@ -91,7 +109,7 @@ export default function Dashboard() {
       setAudioUrl(response.data.audio_url); // Use the audio_url from the new history item
 
       try {
-        await fetchHistory();
+        await fetchHistory(true);
       } catch (historyError) {
         console.warn("Conversion successful, but failed to refresh history:", historyError);
         // Do NOT alert the user, as the main task (speech) worked.
@@ -379,18 +397,26 @@ export default function Dashboard() {
             <div className="bg-[#1e293b]/40 border border-white/5 rounded-2xl p-4 sm:p-6">
               <h3 className="text-lg font-semibold mb-3">Recent Conversions</h3>
 
-              {history.length === 0 ? (
+              {history.length === 0 && !loadingHistory ? (
                 <p className="text-gray-500 text-sm text-center py-6">
                   No history yet
                 </p>
               ) : (
-                <div className="space-y-3">
+                <div
+                  className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar"
+                  onScroll={(e) => {
+                    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+                    if (scrollHeight - scrollTop <= clientHeight + 50 && hasMore && !loadingHistory) {
+                      fetchHistory(false);
+                    }
+                  }}
+                >
                   {history.map(item => (
                     <div
                       key={item.id}
                       className="flex items-center gap-3 p-3 rounded-xl bg-white/5"
                     >
-                      <div className="w-8 h-8 rounded-full bg-brand-blue/20 flex items-center justify-center text-xs">
+                      <div className="w-8 h-8 rounded-full bg-brand-blue/20 flex flex-shrink-0 items-center justify-center text-xs">
                         MP3
                       </div>
                       <div className="flex-1 min-w-0">
@@ -416,6 +442,12 @@ export default function Dashboard() {
                       </button>
                     </div>
                   ))}
+
+                  {loadingHistory && (
+                    <div className="py-4 flex justify-center">
+                      <Loader className="animate-spin w-5 h-5 text-brand-purple" />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
