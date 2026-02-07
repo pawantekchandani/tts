@@ -8,3 +8,4 @@ __pycache__/
 
 *.log
 backend/app_errors.log
+backend/.env
