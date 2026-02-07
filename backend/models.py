@@ -11,7 +11,7 @@ class User(Base):
     hashed_password = Column(String(255))
     
     conversions = relationship("Conversion", back_populates="user")
-    downloads = relationship("DownloadedFile", back_populates="user")
+
 
 class Conversion(Base):
     __tablename__ = "conversions"
@@ -28,16 +28,7 @@ class Conversion(Base):
     
     user = relationship("User", back_populates="conversions")
 
-class DownloadedFile(Base):
-    __tablename__ = "downloaded_files" 
-    
-    id = Column(Integer, primary_key=True, index=True)
-    filename = Column(String(255))
-    audio_url = Column(String(500))
-    downloaded_at = Column(DateTime, default=datetime.utcnow)
-    user_id = Column(Integer, ForeignKey("users.id"))
-    
-    user = relationship("User", back_populates="downloads")
+
     
 class PasswordReset(Base):
     __tablename__ = "password_resets"

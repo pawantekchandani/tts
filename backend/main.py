@@ -7,7 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from sqlalchemy.orm import Session
 from database import engine, Base, get_db
-from models import User, Conversion, PasswordReset, DownloadedFile
+from models import User, Conversion, PasswordReset
 from schemas import UserCreate, UserOut, Token, ForgotPasswordRequest, ResetPasswordRequest
 from auth import hash_password, verify_password, create_access_token
 import boto3
@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 import uuid
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
-from schemas import ConversionCreate, ConversionOut, DownloadCreate, DownloadOut
+from schemas import ConversionCreate, ConversionOut
 from datetime import datetime, timedelta
 import smtplib
 from email.mime.text import MIMEText
@@ -211,7 +211,57 @@ def forgot_password(request: ForgotPasswordRequest, req: Request, db: Session = 
     db.add(password_reset)
     db.commit()
     logger.info(f"Password reset requested for: {request.email}")
-    return {"message": "Reset link sent to your email"}
+
+    # --- EMAIL SENDING LOGIC ---
+    try:
+        sender_email = os.getenv("MAIL_USERNAME")
+        sender_password = os.getenv("MAIL_PASSWORD")
+        smtp_server = os.getenv("MAIL_SERVER", "smtp.gmail.com")
+        smtp_port = int(os.getenv("MAIL_PORT", "587"))
+
+        if not sender_email or not sender_password:
+            logger.error("Email credentials missing in .env")
+            return {"message": "Reset link could not be sent (Server Config Error)"}
+
+        # Determine Frontend URL (Local or Prod)
+        # In production this should be your domain, in local it's localhost:3000
+        # For now, let's try to detect or use a base URL env var, fallback to origin header
+        origin = req.headers.get("origin")
+        if not origin:
+            origin = "http://localhost:3000" # Fallback for local testing
+            
+        reset_link = f"{origin}/reset-password?token={token}"
+
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['To'] = request.email
+        msg['Subject'] = "Password Reset Request - PollyGlot"
+
+        body = f"""
+        <html>
+          <body>
+            <h2>Password Reset Request</h2>
+            <p>Click the link below to reset your password. This link is valid for 1 hour.</p>
+            <a href="{reset_link}" style="background-color: #4F46E5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Reset Password</a>
+            <p>Or copy this link: {reset_link}</p>
+          </body>
+        </html>
+        """
+        msg.attach(MIMEText(body, 'html'))
+
+        server = smtplib.SMTP(smtp_server, smtp_port)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.send_message(msg)
+        server.quit()
+        
+        logger.info(f"Reset email sent successfully to {request.email}")
+        return {"message": "Reset link sent to your email"}
+
+    except Exception as e:
+        logger.error(f"Failed to send email: {str(e)}")
+        # We still return success to avoid leaking valid emails, or you can return error if preferred for debugging
+        return {"message": "Reset link sent to your email (if valid)"}
 
 @app.post("/api/reset-password")
 def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)):
@@ -286,9 +336,9 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/history", response_model=list[ConversionOut])
-def get_history(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    logger.info(f"Fetching history for User ID: {current_user.id} ({current_user.email})")
-    conversions = db.query(Conversion).filter(Conversion.user_id == current_user.id).order_by(Conversion.created_at.desc()).all()
+def get_history(skip: int = 0, limit: int = 20, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    logger.info(f"Fetching history for User ID: {current_user.id} ({current_user.email}) - Skip: {skip}, Limit: {limit}")
+    conversions = db.query(Conversion).filter(Conversion.user_id == current_user.id).order_by(Conversion.created_at.desc()).offset(skip).limit(limit).all()
     logger.info(f"Found {len(conversions)} records for User ID {current_user.id}")
     
     results = []
@@ -330,46 +380,11 @@ def save_history(conversion: ConversionCreate, audio_url: str, db: Session = Dep
         logger.error(f"Failed to save history: {e}")
         raise HTTPException(status_code=500, detail="Failed to save history")
 
-@app.post("/api/downloads", response_model=DownloadOut)
-def save_download(download: DownloadCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    try:
-        user = current_user
-        db_download = DownloadedFile(
-            filename=download.filename,
-            audio_url=download.audio_url,
-            user_id=user.id,
-            downloaded_at=datetime.utcnow()
-        )
-        db.add(db_download)
-        db.commit()
-        db.refresh(db_download)
-        logger.info(f"Download recorded for user {user.email}: {download.filename}")
-        return DownloadOut(
-            id=db_download.id,
-            filename=db_download.filename,
-            audio_url=db_download.audio_url,
-            downloaded_at=db_download.downloaded_at.isoformat()
-        )
-    except Exception as e:
-        logger.error(f"Error saving download: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to save download record")
 
-@app.get("/api/downloads", response_model=list[DownloadOut])
-def get_downloads(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    downloads = db.query(DownloadedFile).filter(DownloadedFile.user_id == current_user.id).order_by(DownloadedFile.downloaded_at.desc()).all()
-    return [DownloadOut(id=d.id, filename=d.filename, audio_url=d.audio_url, downloaded_at=d.downloaded_at.isoformat()) for d in downloads]
 
-@app.delete("/api/downloads/{download_id}")
-def delete_download(download_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    user = current_user
-    download = db.query(DownloadedFile).filter(DownloadedFile.id == download_id, DownloadedFile.user_id == user.id).first()
-    if not download:
-        raise HTTPException(status_code=404, detail="Download not found")
-        
-    db.delete(download)
-    db.commit()
-    logger.info(f"Download record deleted: {download_id}")
-    return {"message": "Download deleted successfully"}
+
+
+
 
 # --- STATIC & FRONTEND SERVING ---
 
