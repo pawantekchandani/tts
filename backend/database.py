@@ -1,14 +1,12 @@
-from sqlalchemy import create_engine, event  # <--- Updated import
+from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from dotenv import load_dotenv
 import os
 from pathlib import Path
 import logging
 
-# --- 1. SETUP LOGGER FOR DATABASE ---
-# This ensures DB errors also go to the same 'app_errors.log' file
+# --- 1. SETUP LOGGER ---
 logger = logging.getLogger("database")
-# We assume basicConfig is already called in main.py, but we can ensure it here too just in case
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -18,41 +16,55 @@ logging.basicConfig(
     ]
 )
 
-# Load .env from backend folder
 env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
-    error_msg = "DATABASE_URL not found in .env file!"
-    logger.critical(error_msg)  # Log this critical error
-    raise ValueError(error_msg)
+    raise ValueError("DATABASE_URL not found!")
 
-# --- CONFIGURATION FIX ---
+# ==========================================
+# 🚀 FINAL FIX: FORCE DRIVER & HANDSHAKE 🚀
+# ==========================================
+# 1. Ensure we use the correct driver
+if "mysql+pymysql" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("mysql+pymysql", "mysql+mysqlconnector")
+elif "mysql://" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("mysql://", "mysql+mysqlconnector://")
+
+# 2. Add charset to URL (Layer 1 Security)
+if "charset=utf8mb4" not in DATABASE_URL:
+    if "?" in DATABASE_URL:
+        DATABASE_URL += "&charset=utf8mb4"
+    else:
+        DATABASE_URL += "?charset=utf8mb4"
+
+ा
+logger.info("Database URL loaded successfully (Password hidden).")
+
 try:
+    # 3. THE MAGIC FIX: init_command
+    # We pass 'init_command' inside connect_args. 
+    # This runs AUTOMATICALLY at the driver level, guaranteed.
     engine = create_engine(
         DATABASE_URL,
         pool_pre_ping=True,
-        connect_args={"charset": "utf8mb4"}
+        pool_recycle=3600,
+        connect_args={
+            "charset": "utf8mb4", 
+            "collation": "utf8mb4_unicode_ci",
+            "init_command": "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci"
+        }
     )
-    
-    # 100% Force UTF-8 on every new connection
-    @event.listens_for(engine, "connect")
-    def set_utf8mb4_encoding(dbapi_connection, connection_record):
-        cursor = dbapi_connection.cursor()
-        cursor.execute("SET NAMES 'utf8mb4'")
-        cursor.execute("SET CHARACTER SET utf8mb4")
-        cursor.close()
-    
-    # Optional: Test connection immediately to catch errors early
+
+    # Test connection immediately
     with engine.connect() as connection:
         logger.info("Database connection established successfully.")
-        
+
 except Exception as e:
-    logger.critical(f"FAILED TO CONNECT TO DATABASE: {str(e)}")
+    logger.critical(f"FAILED TO CONNECT: {str(e)}")
     raise e
-# -------------------------
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
