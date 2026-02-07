@@ -6,7 +6,7 @@ from database import Base
 class User(Base):
     __tablename__ = "users"
     
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(5), primary_key=True, index=True)
     email = Column(String(255), unique=True, index=True)
     hashed_password = Column(String(255))
     
@@ -24,7 +24,7 @@ class Conversion(Base):
     voice_name = Column(String(100), default="Joanna")
     audio_url = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-    user_id = Column(Integer, ForeignKey("users.id"))
+    user_id = Column(String(5), ForeignKey("users.id"))
     
     user = relationship("User", back_populates="conversions")
 
