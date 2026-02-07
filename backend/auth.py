@@ -11,6 +11,14 @@ SECRET_KEY = os.getenv("JWT_SECRET", "your-secret-key")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
+import random
+import string
+
+def generate_user_id(length=5):
+    """Generate a random alphanumeric string of fixed length."""
+    characters = string.ascii_letters + string.digits
+    return ''.join(random.choice(characters) for _ in range(length))
+
 def _truncate_password(password: str) -> str:
     """Truncate password to 72 bytes to comply with bcrypt limit."""
     if not password:

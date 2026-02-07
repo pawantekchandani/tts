@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from database import engine, Base, get_db
 from models import User, Conversion, PasswordReset
 from schemas import UserCreate, UserOut, Token, ForgotPasswordRequest, ResetPasswordRequest
-from auth import hash_password, verify_password, create_access_token
+from auth import hash_password, verify_password, create_access_token, generate_user_id
 import boto3
 import os
 from dotenv import load_dotenv
@@ -44,6 +44,9 @@ logger = logging.getLogger(__name__)
 load_dotenv(Path(__file__).parent / ".env")
 
 app = FastAPI()
+
+# Create Database Tables
+Base.metadata.create_all(bind=engine)
 
 # --- 3. SENTRY DEBUG ROUTE ---
 # Visit https://testingprojects.online/api/debug-sentry to test
@@ -125,11 +128,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         logger.warning("Token payload missing 'sub' (user_id)")
         raise credentials_exception
         
-    try:
-        user_id = int(user_id_str)
-    except ValueError:
-         logger.warning(f"Token 'sub' is not a valid integer: {user_id_str}")
-         raise credentials_exception
+    user_id = user_id_str
 
     logger.info(f"Authenticated Request for User ID: {user_id}")
         
@@ -174,7 +173,20 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail="Password too long (>72 bytes)")
         
         hashed_password = hash_password(user.password)
-        db_user = User(email=user.email, hashed_password=hashed_password)
+        
+        # Determine strict or retry logic for ID uniqueness
+        for _ in range(5):
+             new_id = generate_user_id()
+             if not db.query(User).filter(User.id == new_id).first():
+                 break
+        else:
+             raise HTTPException(status_code=500, detail="Could not generate unique User ID after retries")
+
+        db_user = User(
+            id=new_id, 
+            email=user.email, 
+            hashed_password=hashed_password
+        )
         db.add(db_user)
         db.commit()
         db.refresh(db_user)
