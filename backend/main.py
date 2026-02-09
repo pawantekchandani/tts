@@ -455,28 +455,63 @@ def get_audio_file(file_path: str, db: Session = Depends(get_db), current_user: 
 
 app.mount("/static", StaticFiles(directory=static_path), name="static")
 
-FRONTEND_PATH = os.getenv("FRONTEND_PATH", os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
+# --- FRONTEND STATIC FILES ---
+# Robust search for the frontend build directory
+search_paths = [
+    os.getenv("FRONTEND_PATH"),
+    os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"),  # Local development
+    os.path.join(os.path.dirname(__file__), "frontend", "dist"),
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")), # Potential server root
+    "/home/u956942766/domains/tts.testingprojects.online/public_html"  # Server fallback
+]
 
-if os.path.exists(f"{FRONTEND_PATH}/assets"):
-    app.mount("/assets", StaticFiles(directory=f"{FRONTEND_PATH}/assets"), name="assets")
+FRONTEND_PATH = None
+for path in search_paths:
+    if path and os.path.exists(path) and os.path.exists(os.path.join(path, "index.html")):
+        FRONTEND_PATH = path
+        logger.info(f"Frontend found at: {FRONTEND_PATH}")
+        break
+
+if FRONTEND_PATH:
+    # Check if assets exist in the found frontend path
+    assets_path = os.path.join(FRONTEND_PATH, "assets")
+    if os.path.exists(assets_path):
+        app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
+        logger.info(f"Mounted /assets from {assets_path}")
+else:
+    logger.warning("Frontend index.html not found in any search path!")
+    # Fallback to local dev path to prevent crash, even if it doesn't exist yet
+    FRONTEND_PATH = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+
+
 
 @app.get("/")
 async def serve_root():
-    index_path = f"{FRONTEND_PATH}/index.html"
+    if not FRONTEND_PATH:
+        logger.error("FRONTEND_PATH is not set or valid.")
+        return HTMLResponse(content="<h1>Frontend Not Found (Path Undetermined)</h1>", status_code=404)
+        
+    index_path = os.path.join(FRONTEND_PATH, "index.html")
     if os.path.exists(index_path):
         with open(index_path, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read(), status_code=200)
-    logger.error("Frontend index.html not found!")
+            
+    logger.error(f"Frontend index.html not found at: {index_path}")
     return HTMLResponse(content="<h1>Frontend Not Found</h1>", status_code=404)
 
 @app.get("/{full_path:path}")
 async def serve_react_app(full_path: str):
-    file_location = f"{FRONTEND_PATH}/{full_path}"
+    if not FRONTEND_PATH:
+        return HTMLResponse(content="<h1>Frontend Not Found (Path Undetermined)</h1>", status_code=404)
+
+    file_location = os.path.join(FRONTEND_PATH, full_path)
     if full_path != "" and os.path.isfile(file_location):
         return FileResponse(file_location)
     
-    index_path = f"{FRONTEND_PATH}/index.html"
+    # Fallback to index.html for SPA routing
+    index_path = os.path.join(FRONTEND_PATH, "index.html")
     if os.path.exists(index_path):
         with open(index_path, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read(), status_code=200)
+            
     return HTMLResponse(content="<h1>Frontend Not Found</h1>", status_code=404)
