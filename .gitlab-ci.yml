@@ -1,3 +1,7 @@
+workflow:
+  rules:
+    - if: $CI_COMMIT_BRANCH == "deploy"
+
 stages:
   - build
   - deploy
@@ -27,4 +31,4 @@ deploy_to_milesweb:
       mirror -R backend/ tts_app/backend/; 
       quit"
   only:
-    - main
+    - deploy
