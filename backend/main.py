@@ -525,6 +525,10 @@ async def serve_root():
 
 @app.get("/{full_path:path}")
 async def serve_react_app(full_path: str):
+    # Prevent serving index.html for missing API or debug routes
+    if full_path.startswith("api/") or full_path.startswith("debug-paths"):
+        raise HTTPException(status_code=404, detail="Not Found")
+
     if not FRONTEND_PATH:
         return HTMLResponse(content="<h1>Frontend Not Found (Path Undetermined)</h1>", status_code=404)
 
