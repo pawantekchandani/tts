@@ -215,7 +215,7 @@ export default function Dashboard() {
                   ) : (
                     <>
                       <Sparkles className="w-5 h-5" />
-                      Generate Audio
+                      Generate Mp3
                     </>
                   )}
                 </button>
