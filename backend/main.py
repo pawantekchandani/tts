@@ -312,9 +312,11 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
             Engine=conversion.engine
         )
         
-        now = datetime.utcnow()
+        now = datetime.now()
         month_year = now.strftime("%B-%Y")
-        audio_base_path = static_path / "audio" / month_year
+        # Create a user-specific subfolder
+        user_folder = str(current_user.id)
+        audio_base_path = static_path / "audio" / month_year / user_folder
         audio_base_path.mkdir(parents=True, exist_ok=True)
         
         filename = now.strftime("%b-%d_%H-%M-%S") + ".mp3"
@@ -323,7 +325,7 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
         with open(file_path, 'wb') as f:
             f.write(response['AudioStream'].read())
             
-        audio_url = f"/static/audio/{month_year}/{filename}"
+        audio_url = f"/static/audio/{month_year}/{user_folder}/{filename}"
         db_conversion = Conversion(
             text=conversion.text, 
             audio_url=audio_url, 
@@ -347,11 +349,32 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
         logger.error(f"AWS Polly Conversion Failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+from typing import Optional
+from sqlalchemy import func
+
 @app.get("/api/history", response_model=list[ConversionOut])
-def get_history(skip: int = 0, limit: int = 20, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    logger.info(f"Fetching history for User ID: {current_user.id} ({current_user.email}) - Skip: {skip}, Limit: {limit}")
-    conversions = db.query(Conversion).filter(Conversion.user_id == current_user.id).order_by(Conversion.created_at.desc()).offset(skip).limit(limit).all()
-    logger.info(f"Found {len(conversions)} records for User ID {current_user.id}")
+def get_history(
+    page: int = 1, 
+    limit: int = 10, 
+    search: Optional[str] = None, 
+    date: Optional[str] = None,
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    offset_val = (page - 1) * limit
+    logger.info(f"History Request - User: {current_user.email}, Page: {page}, Limit: {limit}, Search: {search}, Date: {date}")
+    
+    query = db.query(Conversion).filter(Conversion.user_id == current_user.id)
+    
+    if search:
+        query = query.filter(Conversion.text.contains(search))
+    
+    if date:
+        # Assuming date format YYYY-MM-DD
+        query = query.filter(func.date(Conversion.created_at) == date)
+        
+    conversions = query.order_by(Conversion.created_at.desc()).offset(offset_val).limit(limit).all()
+    logger.info(f"Found {len(conversions)} records")
     
     results = []
     for c in conversions:
@@ -369,7 +392,7 @@ def get_history(skip: int = 0, limit: int = 20, db: Session = Depends(get_db), c
 @app.post("/api/history", response_model=ConversionOut)
 def save_history(conversion: ConversionCreate, audio_url: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
-        now = datetime.utcnow()
+        now = datetime.now()
         db_conversion = Conversion(
             text=conversion.text,
             audio_url=audio_url,
@@ -402,9 +425,37 @@ def save_history(conversion: ConversionCreate, audio_url: str, db: Session = Dep
 
 static_path = Path(__file__).parent / "static"
 static_path.mkdir(exist_ok=True)
+@app.get("/static/audio/{file_path:path}")
+def get_audio_file(file_path: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Reconstruct the URL as stored in the DB
+    # Note: file_path will match the wildcard, e.g. "February-2026/123/file.mp3"
+    requested_url = f"/static/audio/{file_path}"
+    
+    # Verify ownership in Database
+    conversion = db.query(Conversion).filter(Conversion.audio_url == requested_url).first()
+    
+    if not conversion:
+        # If file is not in DB, deny access (strict mode) or check if it's a legacy file?
+        # Assuming strict mode for security as requested.
+        logger.warning(f"Access denied: No record found for {requested_url}")
+        raise HTTPException(status_code=404, detail="File record not found")
+        
+    if conversion.user_id != current_user.id:
+        logger.warning(f"Unauthorized access: User {current_user.id} tried to access {requested_url} owned by {conversion.user_id}")
+        raise HTTPException(status_code=403, detail="Forbidden: You do not own this file")
+        
+    # Serve the file
+    base_static = Path(__file__).parent / "static"
+    full_path = base_static / "audio" / file_path
+    
+    if not full_path.exists() or not full_path.is_file():
+         raise HTTPException(status_code=404, detail="File not found on server")
+         
+    return FileResponse(full_path)
+
 app.mount("/static", StaticFiles(directory=static_path), name="static")
 
-FRONTEND_PATH = "/home/rseivuhw/tts.testingprojects.online"
+FRONTEND_PATH = os.getenv("FRONTEND_PATH", os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
 
 if os.path.exists(f"{FRONTEND_PATH}/assets"):
     app.mount("/assets", StaticFiles(directory=f"{FRONTEND_PATH}/assets"), name="assets")
