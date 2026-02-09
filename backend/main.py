@@ -457,20 +457,25 @@ app.mount("/static", StaticFiles(directory=static_path), name="static")
 
 # --- FRONTEND STATIC FILES ---
 # Robust search for the frontend build directory
+current_dir = os.path.dirname(os.path.abspath(__file__))
 search_paths = [
     os.getenv("FRONTEND_PATH"),
-    os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"),  # Local development
-    os.path.join(os.path.dirname(__file__), "frontend", "dist"),
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")), # Potential server root
-    "/home/u956942766/domains/tts.testingprojects.online/public_html"  # Server fallback
+    os.path.join(current_dir, "frontend", "dist"),               # 1. Nested inside backend
+    os.path.join(current_dir, "..", "frontend", "dist"),         # 2. Sibling (Local Dev)
+    os.path.abspath(os.path.join(current_dir, "..", "..")),      # 3. Two levels up (Server Root?)
+    os.path.abspath(os.path.join(current_dir, "..", "..", "public_html")), # 4. Standard cPanel
+    "/home/u956942766/domains/tts.testingprojects.online/public_html", # 5. Hardcoded
+    "/home/u956942766/public_html"                               # 6. Generic Home
 ]
 
 FRONTEND_PATH = None
 for path in search_paths:
-    if path and os.path.exists(path) and os.path.exists(os.path.join(path, "index.html")):
-        FRONTEND_PATH = path
-        logger.info(f"Frontend found at: {FRONTEND_PATH}")
-        break
+    if path and os.path.exists(path):
+         # Check if index.html actually exists there
+         if os.path.exists(os.path.join(path, "index.html")):
+            FRONTEND_PATH = path
+            logger.info(f"Frontend found at: {FRONTEND_PATH}")
+            break
 
 if FRONTEND_PATH:
     # Check if assets exist in the found frontend path
@@ -479,9 +484,28 @@ if FRONTEND_PATH:
         app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
         logger.info(f"Mounted /assets from {assets_path}")
 else:
-    logger.warning("Frontend index.html not found in any search path!")
-    # Fallback to local dev path to prevent crash, even if it doesn't exist yet
-    FRONTEND_PATH = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+    logger.warning(f"Frontend index.html not found! Checked: {search_paths}")
+
+@app.get("/debug-paths")
+async def debug_paths():
+    """Temporary endpoint to diagnose file structure on server"""
+    import os
+    try:
+        current = os.path.abspath(__file__)
+        cwd = os.getcwd()
+        parent = os.path.dirname(cwd)
+        
+        return {
+            "status": "Frontend not found" if not FRONTEND_PATH else "Frontend Found",
+            "determined_frontend_path": FRONTEND_PATH,
+            "current_file_location": current,
+            "current_working_directory": cwd,
+            "search_paths_attempted": [str(p) for p in search_paths if p],
+            "contents_of_cwd": os.listdir(cwd),
+            "contents_of_parent": os.listdir(parent) if os.path.exists(parent) else "Parent inaccessible"
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 
 
