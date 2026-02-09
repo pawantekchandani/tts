@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LogOut, Play, Download, Loader, Sparkles, FileText, Music, Trash2, Maximize2, X } from 'lucide-react';
+import { LogOut, Play, Download, Loader, Sparkles, FileText, Music, Trash2, Maximize2, X, ChevronRight } from 'lucide-react';
 import { authAPI, axiosInstance as axios } from '../api/auth';
 import VoiceSelector from './VoiceSelector';
 import AudioVisualizer from './AudioVisualizer';
+import ChatHistory from './ChatHistory';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:8000`;
 
@@ -14,31 +15,16 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(false);
   const [audioUrl, setAudioUrl] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [downloads, setDownloads] = useState([]);
-  const [showDownloads, setShowDownloads] = useState(false);
-  const [selectedItem, setSelectedItem] = useState(null);
-
-  useEffect(() => {
-    fetchDownloads();
-    fetchHistory(true);
-  }, []);
-
-  const fetchDownloads = async () => {
-    try {
-      const token = authAPI.getToken();
-      const response = await axios.get(`${API_BASE_URL}/api/downloads`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setDownloads(response.data);
-    } catch (error) {
-      console.error("Failed to fetch downloads:", error);
-    }
-  };
-
   const [history, setHistory] = useState([]);
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+
+  useEffect(() => {
+    fetchHistory(true);
+  }, []);
 
   useEffect(() => {
     setVoice(engine === 'neural' ? 'Kajal' : 'Aditi');
@@ -51,16 +37,16 @@ export default function Dashboard() {
     setLoadingHistory(true);
     try {
       const token = authAPI.getToken();
-      const currentPage = reset ? 0 : page;
+      const targetPage = reset ? 1 : page + 1;
       const limit = 10;
 
       const response = await axios.get(`${API_BASE_URL}/api/history`, {
-        params: { skip: currentPage * limit, limit },
+        params: { page: targetPage, limit },
         headers: { Authorization: `Bearer ${token}` }
       });
 
       const historyData = Array.isArray(response.data) ? response.data : [];
-      console.log(`Fetched history page ${currentPage}:`, historyData.length, "records");
+      console.log(`Fetched history page ${targetPage}:`, historyData.length, "records");
 
       const formattedHistory = historyData.map(item => ({
         ...item,
@@ -72,7 +58,7 @@ export default function Dashboard() {
         setPage(1);
       } else {
         setHistory(prev => [...prev, ...formattedHistory]);
-        setPage(prev => prev + 1);
+        setPage(targetPage);
       }
 
       setHasMore(historyData.length === limit);
@@ -84,7 +70,33 @@ export default function Dashboard() {
     }
   };
 
+  // Helper to fetch audio securely
+  const fetchSecureAudio = async (url) => {
+    if (!url) return null;
+    if (url.startsWith('blob:')) return url; // Already processed
 
+    try {
+      const token = authAPI.getToken();
+      const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
+
+      const response = await fetch(fullUrl, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (!response.ok) {
+        if (response.status === 403) throw new Error("You do not have permission to access this file.");
+        if (response.status === 404) throw new Error("Audio file not found.");
+        throw new Error("Failed to load audio.");
+      }
+
+      const blob = await response.blob();
+      return window.URL.createObjectURL(blob);
+    } catch (error) {
+      console.error("Secure audio fetch failed:", error);
+      alert(error.message);
+      return null;
+    }
+  };
 
   const handleConvert = async () => {
     if (!text) return;
@@ -106,24 +118,21 @@ export default function Dashboard() {
         audio_url: response.data.audio_url // Ensure full URL if needed, though response might have relative
       };
 
-      setAudioUrl(response.data.audio_url); // Use the audio_url from the new history item
+      // Securely fetch the audio blob immediately so it's ready to play
+      const secureUrl = await fetchSecureAudio(response.data.audio_url);
+      if (secureUrl) {
+        setAudioUrl(secureUrl);
+      }
 
       try {
         await fetchHistory(true);
       } catch (historyError) {
         console.warn("Conversion successful, but failed to refresh history:", historyError);
-        // Do NOT alert the user, as the main task (speech) worked.
       }
 
     } catch (error) {
       console.error("Dashboard handleConvert Error:", error);
       const errorMessage = error.response?.data?.detail || 'Conversion failed. Please try again.';
-
-      // Don't alert if the conversion actually worked but history fetch failed
-      // Check if we have a valid response despite the catch block?
-      // Actually, if await fetchHistory() fails, it throws here.
-      // We should isolate the history fetch error from the conversion error.
-
       alert(`Error: ${errorMessage}`);
     } finally {
       setIsLoading(false);
@@ -151,106 +160,6 @@ export default function Dashboard() {
           <span className="hidden sm:block text-sm text-gray-400">
             {authAPI.getUserEmail()}
           </span>
-
-
-          {/* DOWNLOADS DROPDOWN */}
-          <div className="relative">
-            <button
-              onClick={() => setShowDownloads(!showDownloads)}
-              className="flex items-center gap-2 text-sm text-gray-400 hover:text-white"
-            >
-              <Download className="w-4 h-4" />
-              <span className="hidden sm:block">Downloads</span>
-            </button>
-
-            <AnimatePresence>
-              {showDownloads && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 10 }}
-                  className="absolute right-0 mt-2 w-72 sm:w-80 bg-gray-800 border border-white/10 rounded-xl shadow-xl z-50 max-h-96 overflow-y-auto"
-                >
-                  <div className="p-3 border-b border-white/5 flex justify-between items-center sticky top-0 bg-gray-800 z-10">
-                    <h4 className="font-semibold text-sm">Downloaded Files</h4>
-                    <span className="text-xs text-brand-purple">{downloads.length} files</span>
-                  </div>
-
-                  {downloads.length === 0 ? (
-                    <div className="p-6 text-center text-gray-500 text-sm">
-                      No downloads yet
-                    </div>
-                  ) : (
-                    <div className="p-2 space-y-2">
-                      {downloads.map(item => (
-                        <div key={item.id} className="flex items-center gap-3 p-2 hover:bg-white/5 rounded-lg group">
-                          <div className="w-8 h-8 rounded-full bg-brand-purple/20 flex flex-shrink-0 items-center justify-center text-xs">
-                            MP3
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm truncate text-white/90">{item.filename}</p>
-                            <p className="text-[10px] text-gray-500">
-                              {new Date(item.downloaded_at).toLocaleDateString()}
-                            </p>
-                          </div>
-                          <button
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              try {
-                                const fullUrl = item.audio_url.startsWith('http')
-                                  ? item.audio_url
-                                  : `${API_BASE_URL}${item.audio_url}`;
-
-                                const response = await fetch(fullUrl);
-                                if (!response.ok) throw new Error('Download failed');
-                                const blob = await response.blob();
-                                const url = window.URL.createObjectURL(blob);
-
-                                const a = document.createElement('a');
-                                a.style.display = 'none';
-                                a.href = url;
-                                a.download = item.filename;
-                                document.body.appendChild(a);
-                                a.click();
-                                window.URL.revokeObjectURL(url);
-                                document.body.removeChild(a);
-                              } catch (error) {
-                                alert('Failed to download file.');
-                              }
-                            }}
-                            className="p-1.5 rounded-md text-gray-400 hover:text-brand-purple hover:bg-brand-purple/10 opacity-0 group-hover:opacity-100 transition-all"
-                            title="Download Again"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                          </button>
-
-                          <button
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              if (!confirm('Are you sure you want to delete this file?')) return;
-                              try {
-                                const token = authAPI.getToken();
-                                await axios.delete(`${API_BASE_URL}/api/downloads/${item.id}`, {
-                                  headers: { Authorization: `Bearer ${token}` }
-                                });
-                                setDownloads(prev => prev.filter(d => d.id !== item.id));
-                              } catch (error) {
-                                alert('Failed to delete file.');
-                              }
-                            }}
-                            className="p-1.5 rounded-md text-gray-400 hover:text-red-500 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
 
           <button
             onClick={handleLogout}
@@ -306,7 +215,7 @@ export default function Dashboard() {
                   ) : (
                     <>
                       <Sparkles className="w-5 h-5" />
-                      Generate Speech
+                      Generate Audio
                     </>
                   )}
                 </button>
@@ -345,6 +254,8 @@ export default function Dashboard() {
                   <button
                     onClick={async () => {
                       if (!audioUrl) return;
+                      // Since audioUrl is now a Blob URL (blob:...), we can fetch it directly without auth headers
+                      // to process it for download.
                       try {
                         const response = await fetch(audioUrl);
                         if (!response.ok) throw new Error('Download failed');
@@ -368,17 +279,6 @@ export default function Dashboard() {
                         a.click();
                         window.URL.revokeObjectURL(url);
                         document.body.removeChild(a);
-
-                        // Save to backend
-                        const token = authAPI.getToken();
-                        // Fix 405 Method Not Allowed: Use updated /api/downloads path
-                        await axios.post(`${API_BASE_URL}/api/downloads`, {
-                          filename: fileName,
-                          audio_url: audioUrl
-                        }, {
-                          headers: { Authorization: `Bearer ${token}` }
-                        });
-                        fetchDownloads();
 
                       } catch (error) {
                         alert('Failed to download audio file. Please try again.');
@@ -411,7 +311,7 @@ export default function Dashboard() {
                     }
                   }}
                 >
-                  {history.map(item => (
+                  {history.slice(0, 5).map(item => (
                     <div
                       key={item.id}
                       className="flex items-center gap-3 p-3 rounded-xl bg-white/5"
@@ -426,7 +326,10 @@ export default function Dashboard() {
                         </p>
                       </div>
                       <button
-                        onClick={() => setAudioUrl(item.audio_url)}
+                        onClick={async () => {
+                          const secureUrl = await fetchSecureAudio(item.audio_url);
+                          if (secureUrl) setAudioUrl(secureUrl);
+                        }}
                         className="p-2 rounded-lg bg-brand-blue/20 hover:bg-brand-blue/40 transition-colors"
                         title="Play"
                       >
@@ -448,6 +351,16 @@ export default function Dashboard() {
                       <Loader className="animate-spin w-5 h-5 text-brand-purple" />
                     </div>
                   )}
+
+                  {!loadingHistory && history.length > 0 && (
+                    <button
+                      onClick={() => setShowHistoryModal(true)}
+                      className="w-full mt-4 py-2 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors flex items-center justify-center gap-2"
+                    >
+                      View All History
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -455,6 +368,26 @@ export default function Dashboard() {
           </div>
         </div>
       </main>
+
+      {/* HISTORY MODAL */}
+      <AnimatePresence>
+        {showHistoryModal && (
+          <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex justify-end">
+            <motion.div
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              className="w-full max-w-lg bg-brand-dark h-full shadow-2xl relative" // Use a side panel or full modal
+            >
+              {/* We can reuse the ChatHistory component here, but maybe passing it as a modal content is better?
+                         Wait, the user asked for a new component ChatHistory.jsx that fetches ALL conversions.
+                         So I should mount that component when the state is active.
+                     */}
+              <ChatHistory onClose={() => setShowHistoryModal(false)} />
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* DETAILS MODAL */}
       <AnimatePresence>
@@ -497,9 +430,12 @@ export default function Dashboard() {
 
                 <div className="flex gap-3 pt-2">
                   <button
-                    onClick={() => {
-                      setAudioUrl(selectedItem.audio_url);
-                      setSelectedItem(null);
+                    onClick={async () => {
+                      const secureUrl = await fetchSecureAudio(selectedItem.audio_url);
+                      if (secureUrl) {
+                        setAudioUrl(secureUrl);
+                        setSelectedItem(null);
+                      }
                     }}
                     className="flex-1 bg-brand-blue/20 hover:bg-brand-blue/30 text-brand-blue py-3 rounded-xl font-bold flex justify-center items-center gap-2 transition-colors"
                   >
@@ -508,29 +444,37 @@ export default function Dashboard() {
                   </button>
                   <button
                     onClick={async () => {
+                      // For "Download" inside modal, we also need to ensure we have a secure way to access the file first.
+                      // If selectedItem.audio_url is a string (backend path), we must fetch it securely first.
                       try {
+                        const token = authAPI.getToken();
                         const fullUrl = selectedItem.audio_url.startsWith('http')
                           ? selectedItem.audio_url
                           : `${API_BASE_URL}${selectedItem.audio_url}`;
-                        const response = await fetch(fullUrl);
+
+                        const response = await fetch(fullUrl, {
+                          headers: { Authorization: `Bearer ${token}` }
+                        });
+                        if (!response.ok) throw new Error('Download failed');
+
                         const blob = await response.blob();
                         const url = window.URL.createObjectURL(blob);
+
                         const a = document.createElement('a');
                         a.style.display = 'none';
                         a.href = url;
-                        a.download = `detailed_download_${Date.now()}.mp3`;
+                        // Timestamp name for download
+                        a.download = `download_${Date.now()}.mp3`;
                         document.body.appendChild(a);
                         a.click();
                         window.URL.revokeObjectURL(url);
                         document.body.removeChild(a);
                       } catch (e) {
-                        alert('Download failed');
+                        alert('Download failed: ' + e.message);
                       }
                     }}
                     className="flex-1 bg-white/5 hover:bg-white/10 text-white py-3 rounded-xl font-bold flex justify-center items-center gap-2 transition-colors"
                   >
-                    <Download className="w-4 h-4" />
-                    Download
                   </button>
                 </div>
               </div>
