@@ -14,6 +14,7 @@ export default function Dashboard() {
   const [engine, setEngine] = useState('neural');
   const [isLoading, setIsLoading] = useState(false);
   const [audioUrl, setAudioUrl] = useState(null);
+  const [currentConversionId, setCurrentConversionId] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [history, setHistory] = useState([]);
   const [page, setPage] = useState(1);
@@ -108,10 +109,15 @@ export default function Dashboard() {
       const response = await axios.post(
         `${API_BASE_URL}/api/convert`,
         { text, voice_id: voice, engine },
-        { headers: { Authorization: `Bearer ${token}` } }
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          timeout: 30000
+        }
       );
 
       // Add to history using the response data
+      setCurrentConversionId(response.data.id);
+
       const newHistoryItem = {
         ...response.data,
         voice: response.data.voice_name || voice, // Use backend voice name or local state
@@ -253,23 +259,28 @@ export default function Dashboard() {
 
                   <button
                     onClick={async () => {
-                      if (!audioUrl) return;
-                      // Since audioUrl is now a Blob URL (blob:...), we can fetch it directly without auth headers
-                      // to process it for download.
+                      if (!currentConversionId) {
+                        alert("Cannot download: Conversion ID missing. Please regenerate.");
+                        return;
+                      }
+
                       try {
-                        const response = await fetch(audioUrl);
-                        if (!response.ok) throw new Error('Download failed');
+                        const token = authAPI.getToken();
+                        const response = await fetch(`${API_BASE_URL}/api/download/${currentConversionId}`, {
+                          headers: { Authorization: `Bearer ${token}` }
+                        });
+
+                        if (!response.ok) {
+                          const errorData = await response.json();
+                          throw new Error(errorData.detail || 'Download failed');
+                        }
+
                         const blob = await response.blob();
                         const url = window.URL.createObjectURL(blob);
 
-                        // Generate filename: Month-Date_Time (e.g., Feb-02_10-50-22.mp3)
+                        // Generate filename
                         const now = new Date();
-                        const month = now.toLocaleString('en-US', { month: 'short' });
-                        const date = String(now.getDate()).padStart(2, '0');
-                        const hours = String(now.getHours()).padStart(2, '0');
-                        const minutes = String(now.getMinutes()).padStart(2, '0');
-                        const seconds = String(now.getSeconds()).padStart(2, '0');
-                        const fileName = `${month}-${date}_${hours}-${minutes}-${seconds}.mp3`;
+                        const fileName = `pollyglot_${now.getTime()}.mp3`;
 
                         const a = document.createElement('a');
                         a.style.display = 'none';
@@ -281,7 +292,7 @@ export default function Dashboard() {
                         document.body.removeChild(a);
 
                       } catch (error) {
-                        alert('Failed to download audio file. Please try again.');
+                        alert(`Download Error: ${error.message}`);
                       }
                     }}
                     className="w-full mt-4 flex items-center justify-center gap-2 bg-brand-purple py-3 rounded-xl font-bold hover:bg-opacity-90 transition-colors"
@@ -328,7 +339,10 @@ export default function Dashboard() {
                       <button
                         onClick={async () => {
                           const secureUrl = await fetchSecureAudio(item.audio_url);
-                          if (secureUrl) setAudioUrl(secureUrl);
+                          if (secureUrl) {
+                            setAudioUrl(secureUrl);
+                            setCurrentConversionId(item.id);
+                          }
                         }}
                         className="p-2 rounded-lg bg-brand-blue/20 hover:bg-brand-blue/40 transition-colors"
                         title="Play"
@@ -367,7 +381,7 @@ export default function Dashboard() {
 
           </div>
         </div>
-      </main>
+      </main >
 
       {/* HISTORY MODAL */}
       <AnimatePresence>
@@ -377,12 +391,8 @@ export default function Dashboard() {
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
-              className="w-full max-w-lg bg-brand-dark h-full shadow-2xl relative" // Use a side panel or full modal
+              className="w-full max-w-lg bg-brand-dark h-full shadow-2xl relative"
             >
-              {/* We can reuse the ChatHistory component here, but maybe passing it as a modal content is better?
-                         Wait, the user asked for a new component ChatHistory.jsx that fetches ALL conversions.
-                         So I should mount that component when the state is active.
-                     */}
               <ChatHistory onClose={() => setShowHistoryModal(false)} />
             </motion.div>
           </div>
@@ -434,6 +444,7 @@ export default function Dashboard() {
                       const secureUrl = await fetchSecureAudio(selectedItem.audio_url);
                       if (secureUrl) {
                         setAudioUrl(secureUrl);
+                        setCurrentConversionId(selectedItem.id);
                         setSelectedItem(null);
                       }
                     }}
@@ -442,40 +453,7 @@ export default function Dashboard() {
                     <Play className="w-4 h-4" />
                     Play Audio
                   </button>
-                  <button
-                    onClick={async () => {
-                      // For "Download" inside modal, we also need to ensure we have a secure way to access the file first.
-                      // If selectedItem.audio_url is a string (backend path), we must fetch it securely first.
-                      try {
-                        const token = authAPI.getToken();
-                        const fullUrl = selectedItem.audio_url.startsWith('http')
-                          ? selectedItem.audio_url
-                          : `${API_BASE_URL}${selectedItem.audio_url}`;
-
-                        const response = await fetch(fullUrl, {
-                          headers: { Authorization: `Bearer ${token}` }
-                        });
-                        if (!response.ok) throw new Error('Download failed');
-
-                        const blob = await response.blob();
-                        const url = window.URL.createObjectURL(blob);
-
-                        const a = document.createElement('a');
-                        a.style.display = 'none';
-                        a.href = url;
-                        // Timestamp name for download
-                        a.download = `download_${Date.now()}.mp3`;
-                        document.body.appendChild(a);
-                        a.click();
-                        window.URL.revokeObjectURL(url);
-                        document.body.removeChild(a);
-                      } catch (e) {
-                        alert('Download failed: ' + e.message);
-                      }
-                    }}
-                    className="flex-1 bg-white/5 hover:bg-white/10 text-white py-3 rounded-xl font-bold flex justify-center items-center gap-2 transition-colors"
-                  >
-                  </button>
+                  <div className="flex-1"></div>
                 </div>
               </div>
             </motion.div>

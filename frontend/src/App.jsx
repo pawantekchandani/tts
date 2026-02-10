@@ -6,6 +6,7 @@ import ForgotPassword from './components/ForgotPassword'
 import ResetPassword from './components/ResetPassword'
 import AdminLayout from './components/AdminLayout'
 import AdminDashboard from './components/AdminDashboard'
+import PlanSettings from './components/PlanSettings'
 import { authAPI } from './api/auth'
 import './index.css'
 
@@ -16,7 +17,7 @@ function AdminView() {
     <AdminLayout activeTab={activeTab} onTabChange={setActiveTab}>
       {activeTab === 'dashboard' && <AdminDashboard />}
       {activeTab === 'users' && <div className="text-white">Users Management (Coming Soon)</div>}
-      {activeTab === 'settings' && <div className="text-white">Settings (Coming Soon)</div>}
+      {activeTab === 'settings' && <PlanSettings />}
     </AdminLayout>
   )
 }
