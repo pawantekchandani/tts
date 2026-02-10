@@ -68,4 +68,11 @@ class ResetPasswordRequest(BaseModel):
         return v
 
 
+class PlanLimitUpdate(BaseModel):
+    chats_per_day: int
+    context_limit: int
+    download_limit: int
+    history_days: int
+
+
 

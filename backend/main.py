@@ -7,8 +7,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from sqlalchemy.orm import Session
 from database import engine, Base, get_db
-from models import User, Conversion, PasswordReset, Transaction
-from schemas import UserCreate, UserOut, Token, ForgotPasswordRequest, ResetPasswordRequest
+from models import User, Conversion, PasswordReset, Transaction, PlanLimits, DownloadHistory
+from schemas import UserCreate, UserOut, Token, ForgotPasswordRequest, ResetPasswordRequest, PlanLimitUpdate
 from auth import hash_password, verify_password, create_access_token, generate_user_id
 import boto3
 import os
@@ -27,6 +27,7 @@ from fastapi.security import OAuth2PasswordBearer
 from auth import verify_token
 # --- AUTO MIGRATION ---
 from auto_migrate import run_auto_migrations
+from utils import check_user_limits
 
 # --- 1. SENTRY CONFIGURATION ---
 sentry_sdk.init(
@@ -52,10 +53,16 @@ load_dotenv(Path(__file__).parent / ".env")
 app = FastAPI()
 
 # Handle DB Migrations (Existing Schema Changes)
+# Handle DB Migrations (Existing Schema Changes)
 run_auto_migrations()
 
 # Create NEW Tables (if they don't exist)
 Base.metadata.create_all(bind=engine)
+
+# Seed Plan Limits
+from seed_plans import seed_plans
+seed_plans()
+
 
 # --- 3. GLOBAL ERROR CATCHER ---
 @app.middleware("http")
@@ -255,6 +262,31 @@ def get_admin_stats(db: Session = Depends(get_db), current_user: User = Depends(
         "recentActivity": activity_data
     }
 
+@app.get("/api/admin/plans")
+def get_plans(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access required")
+    return db.query(PlanLimits).all()
+
+@app.put("/api/admin/plans/{plan_name}")
+def update_plan(plan_name: str, plan_update: PlanLimitUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not current_user.is_admin:
+         raise HTTPException(status_code=403, detail="Forbidden: Admin access required")
+    
+    plan = db.query(PlanLimits).filter(PlanLimits.plan_name == plan_name).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+        
+    plan.chats_per_day = plan_update.chats_per_day
+    plan.context_limit = plan_update.context_limit
+    plan.download_limit = plan_update.download_limit
+    plan.history_days = plan_update.history_days
+    
+    db.commit()
+    db.refresh(plan)
+    return plan
+
+
 # --- CONTENT ROUTES ---
 
 static_path = Path(__file__).parent / "static"
@@ -266,6 +298,11 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
         raise HTTPException(status_code=400, detail="Text cannot be empty")
     if not polly_client:
          raise HTTPException(status_code=500, detail="AWS Polly unavailable")
+
+    # Check Plan Limits
+    limit_check = check_user_limits(current_user.id, db, len(conversion.text))
+    if not limit_check['allowed']:
+        raise HTTPException(status_code=403, detail=limit_check['reason'])
 
     try:
         response = polly_client.synthesize_speech(
@@ -310,8 +347,23 @@ def get_history(
     page: int = 1, limit: int = 10, search: Optional[str] = None, date: Optional[str] = None,
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
+    # 1. Determine User's Plan & History Limit
+    latest_transaction = db.query(Transaction).filter(Transaction.user_id == current_user.id).order_by(Transaction.timestamp.desc()).first()
+    current_plan_name = latest_transaction.plan_type if latest_transaction else "Basic"
+    
+    plan_limits = db.query(PlanLimits).filter(PlanLimits.plan_name == current_plan_name).first()
+    history_days = plan_limits.history_days if plan_limits else 7 # Default to 7 days if something goes wrong
+    
+    # Calculate cutoff date
+    cutoff_date = datetime.utcnow() - timedelta(days=history_days)
+
     offset_val = (page - 1) * limit
-    query = db.query(Conversion).filter(Conversion.user_id == current_user.id)
+    
+    # 2. Build Query with Time Limit
+    query = db.query(Conversion).filter(
+        Conversion.user_id == current_user.id,
+        Conversion.created_at >= cutoff_date 
+    )
     
     if search:
         query = query.filter(Conversion.text.contains(search))
@@ -328,6 +380,7 @@ def get_history(
             created_at=c.created_at.isoformat() if c.created_at else datetime.now().isoformat()
         ))
     return results
+
 
 @app.post("/api/history", response_model=ConversionOut)
 def save_history(conversion: ConversionCreate, audio_url: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -378,6 +431,63 @@ def get_audio_file(file_path: str, db: Session = Depends(get_db), current_user: 
          raise HTTPException(status_code=404, detail="File not found on server")
          
     return FileResponse(full_path)
+
+@app.get("/api/download/{conversion_id}")
+def download_conversion(conversion_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # 1. Fetch Conversion Record
+    conversion = db.query(Conversion).filter(Conversion.id == conversion_id).first()
+    if not conversion:
+        raise HTTPException(status_code=404, detail="Conversion not found")
+        
+    # 2. Check Ownership
+    if conversion.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden: You do not own this file")
+
+    # 3. Check Download Limit
+    usage_check = check_user_limits(current_user.id, db, text_length=0) # 0 means we act like we are just checking usage
+    if not usage_check['allowed']:
+        # This only happens if plan is missing/error
+         raise HTTPException(status_code=500, detail=usage_check['reason'])
+
+    current_plan = usage_check.get('plan')
+    daily_downloads = usage_check.get('daily_download_count', 0)
+    
+    if current_plan and daily_downloads >= current_plan.download_limit:
+        raise HTTPException(status_code=403, detail=f"Daily download limit reached ({current_plan.download_limit}). Upgrade to download more.")
+
+    # 4. Record Download (If allowed)
+    try:
+        new_download = DownloadHistory(
+            user_id=current_user.id,
+            conversion_id=conversion.id,
+            timestamp=datetime.utcnow()
+        )
+        db.add(new_download)
+        db.commit()
+    except Exception as e:
+        logger.error(f"Failed to log download history: {e}")
+        # We proceed even if logging fails? Or block? Better to fail safe.
+        # But for user experience, maybe just log error.
+    
+    # 5. Serve File
+    # Extract file path from URL logic (since we stored full URL previously)
+    # URL format: /static/audio/Month-Year/UserId/Filename.mp3
+    # We need just the relative path: Month-Year/UserId/Filename.mp3
+    try:
+        relative_path = conversion.audio_url.replace("/static/audio/", "")
+        full_path = static_path / "audio" / relative_path
+        
+        if not full_path.exists():
+            raise HTTPException(status_code=404, detail="Audio file missing from server storage.")
+
+        return FileResponse(
+            full_path, 
+            headers={"Content-Disposition": f"attachment; filename={full_path.name}"},
+            media_type="audio/mpeg"
+        )
+    except Exception as e:
+        logger.error(f"Download Error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error during download.")
 
 app.mount("/static", StaticFiles(directory=static_path), name="static")
 

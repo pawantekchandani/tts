@@ -48,3 +48,23 @@ class Transaction(Base):
     amount = Column(Float)
     plan_type = Column(String(50))
     timestamp = Column(DateTime, default=datetime.utcnow)
+
+
+class PlanLimits(Base):
+    __tablename__ = "plan_limits"
+
+    id = Column(Integer, primary_key=True, index=True)
+    plan_name = Column(String(50), unique=True, index=True)
+    chats_per_day = Column(Integer)
+    context_limit = Column(Integer)
+    download_limit = Column(Integer)
+    history_days = Column(Integer)
+
+
+class DownloadHistory(Base):
+    __tablename__ = "download_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(5), ForeignKey("users.id"))
+    conversion_id = Column(Integer, ForeignKey("conversions.id"))
+    timestamp = Column(DateTime, default=datetime.utcnow)
