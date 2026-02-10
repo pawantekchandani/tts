@@ -1,0 +1,78 @@
+import React, { useState } from 'react';
+import { LayoutDashboard, Users, Settings, LogOut } from 'lucide-react';
+
+const AdminLayout = ({ children, activeTab, onTabChange }) => {
+    return (
+        <div className="min-h-screen bg-gray-900 flex">
+            {/* Sidebar */}
+            <aside className="fixed left-0 top-0 h-full w-64 bg-gray-800 border-r border-gray-700 shadow-xl z-50">
+                <div className="p-6 border-b border-gray-700">
+                    <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+                        Admin Panel
+                    </h1>
+                </div>
+
+                <nav className="mt-6 px-4 space-y-2">
+                    <button
+                        onClick={() => onTabChange('dashboard')}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activeTab === 'dashboard'
+                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
+                            : 'text-gray-400 hover:bg-gray-700 hover:text-white'
+                            }`}
+                    >
+                        <LayoutDashboard size={20} />
+                        <span className="font-medium">Dashboard</span>
+                    </button>
+
+                    {/* Placeholder for future tabs */}
+                    <button
+                        onClick={() => onTabChange('users')}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activeTab === 'users'
+                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
+                            : 'text-gray-400 hover:bg-gray-700 hover:text-white'
+                            }`}
+                    >
+                        <Users size={20} />
+                        <span className="font-medium">Users</span>
+                    </button>
+
+                    <button
+                        onClick={() => onTabChange('settings')}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activeTab === 'settings'
+                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
+                            : 'text-gray-400 hover:bg-gray-700 hover:text-white'
+                            }`}
+                    >
+                        <Settings size={20} />
+                        <span className="font-medium">Settings</span>
+                    </button>
+                </nav>
+
+                <div className="absolute bottom-0 w-full p-4 border-t border-gray-700">
+                    <button
+                        onClick={() => {
+                            // Handle logout logic passed from parent or direct api
+                            localStorage.removeItem('access_token');
+                            localStorage.removeItem('user_email');
+                            localStorage.removeItem('conversionHistory');
+                            window.location.reload();
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-red-400 hover:bg-red-500/10 hover:text-red-300 rounded-xl transition-colors"
+                    >
+                        <LogOut size={20} />
+                        <span className="font-medium">Logout</span>
+                    </button>
+                </div>
+            </aside>
+
+            {/* Main Content Area */}
+            <main className="flex-1 ml-64 p-8 bg-gray-900 text-white min-h-screen overflow-y-auto">
+                <div className="max-w-7xl mx-auto">
+                    {children}
+                </div>
+            </main>
+        </div>
+    );
+};
+
+export default AdminLayout;
