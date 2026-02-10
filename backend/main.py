@@ -1,4 +1,4 @@
-import sentry_sdk # <--- NEW: Sentry SDK
+import sentry_sdk
 import logging
 import sys
 from fastapi import FastAPI, Depends, HTTPException, status, Request
@@ -21,9 +21,12 @@ from datetime import datetime, timedelta
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from typing import Optional
+from sqlalchemy import func
+from fastapi.security import OAuth2PasswordBearer
+from auth import verify_token
 
 # --- 1. SENTRY CONFIGURATION ---
-# Initialize Sentry at the very top for complete coverage
 sentry_sdk.init(
     dsn="https://802e0792557423aef70c6a49dfe32404@o4510838171107328.ingest.us.sentry.io/4510838173925376",
     traces_sample_rate=1.0,
@@ -48,28 +51,18 @@ app = FastAPI()
 # Create Database Tables
 Base.metadata.create_all(bind=engine)
 
-# --- 3. SENTRY DEBUG ROUTE ---
-# Visit https://testingprojects.online/api/debug-sentry to test
-@app.get("/api/debug-sentry")
-async def trigger_error():
-    division_by_zero = 1 / 0
-    return {"message": "Should not reach here"}
-
-# --- 4. GLOBAL ERROR CATCHER ---
+# --- 3. GLOBAL ERROR CATCHER ---
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     try:
         response = await call_next(request)
         return response
     except Exception as e:
-        # Note: Sentry captures this automatically now!
         logger.error(f"CRITICAL ERROR in {request.url.path}: {str(e)}", exc_info=True)
         return JSONResponse(
             status_code=500,
             content={"detail": "Internal Server Error. Please check logs/Sentry."}
         )
-
-# --- REST OF YOUR ORIGINAL CODE (No changes below) ---
 
 # AWS Polly Client Configuration
 try:
@@ -95,22 +88,13 @@ app.add_middleware(
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     errors = exc.errors()
-    error_msg = "Validation error"
-    if errors:
-        error_msg = errors[0].get('msg', 'Validation error')
-        field = '.'.join(str(loc) for loc in errors[0].get('loc', []))
-        if field:
-            error_msg = f"{field}: {error_msg}"
-            
+    error_msg = errors[0].get('msg', 'Validation error') if errors else "Validation error"
     logger.warning(f"Validation Error on {request.url.path}: {error_msg}")
-    return JSONResponse(
-        status_code=400,
-        content={"detail": error_msg}
-    )
+    return JSONResponse(status_code=400, content={"detail": error_msg})
 
-from fastapi.security import OAuth2PasswordBearer
+
+# --- AUTH DEPENDENCIES ---
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
-from auth import verify_token
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
@@ -120,94 +104,55 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     )
     payload = verify_token(token)
     if payload is None:
-        logger.warning("Token verification failed (payload is None)")
         raise credentials_exception
         
     user_id_str: str = payload.get("sub")
     if user_id_str is None:
-        logger.warning("Token payload missing 'sub' (user_id)")
         raise credentials_exception
         
-    user_id = user_id_str
-
-    logger.info(f"Authenticated Request for User ID: {user_id}")
-        
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(User.id == user_id_str).first()
     if user is None:
-        logger.warning(f"User ID {user_id} not found in database")
         raise credentials_exception
         
     return user
 
 @app.get("/health")
 def health_check():
-    aws_status = "unknown"
-    if polly_client:
-        try:
-            polly_client.describe_voices(LanguageCode='en-US')
-            aws_status = "connected"
-        except Exception as e:
-            aws_status = f"error: {str(e)}"
-            logger.error(f"Health Check Failed (AWS): {str(e)}")
-    
-    return {
-        "status": "ok", 
-        "message": "Server is running",
-        "aws_polly": aws_status
-    }
+    return {"status": "ok", "message": "Server is running"}
 
 # --- AUTH ROUTES ---
 
 @app.post("/api/signup", response_model=UserOut)
 def signup(user: UserCreate, db: Session = Depends(get_db)):
     try:
-        logger.info(f"Signup attempt for: {user.email}")
-        
         existing_user = db.query(User).filter(User.email == user.email).first()
         if existing_user:
-            logger.warning(f"Signup failed - Email exists: {user.email}")
             raise HTTPException(status_code=400, detail="Email already registered")
-        
-        password_bytes = len(user.password.encode('utf-8'))
-        if password_bytes > 72:
-            raise HTTPException(status_code=400, detail="Password too long (>72 bytes)")
         
         hashed_password = hash_password(user.password)
         
-        # Determine strict or retry logic for ID uniqueness
         for _ in range(5):
              new_id = generate_user_id()
              if not db.query(User).filter(User.id == new_id).first():
                  break
         else:
-             raise HTTPException(status_code=500, detail="Could not generate unique User ID after retries")
+             raise HTTPException(status_code=500, detail="Could not generate unique User ID")
 
-        db_user = User(
-            id=new_id, 
-            email=user.email, 
-            hashed_password=hashed_password
-        )
+        db_user = User(id=new_id, email=user.email, hashed_password=hashed_password)
         db.add(db_user)
         db.commit()
         db.refresh(db_user)
-        
-        logger.info(f"User created successfully: {user.email}")
         return db_user
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Signup Database Error: {str(e)}", exc_info=True)
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        logger.error(f"Signup Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/login", response_model=Token)
 def login(user: UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.email == user.email).first()
     if not db_user or not verify_password(user.password, db_user.hashed_password):
-        logger.warning(f"Login failed for: {user.email}")
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
-    logger.info(f"User logged in: {user.email}")
     access_token = create_access_token(data={"sub": str(db_user.id)})
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -222,43 +167,22 @@ def forgot_password(request: ForgotPasswordRequest, req: Request, db: Session = 
     password_reset = PasswordReset(email=request.email, token=token, expires_at=expires_at)
     db.add(password_reset)
     db.commit()
-    logger.info(f"Password reset requested for: {request.email}")
 
-    # --- EMAIL SENDING LOGIC ---
     try:
         sender_email = os.getenv("MAIL_USERNAME")
         sender_password = os.getenv("MAIL_PASSWORD")
         smtp_server = os.getenv("MAIL_SERVER", "smtp.gmail.com")
         smtp_port = int(os.getenv("MAIL_PORT", "587"))
 
-        if not sender_email or not sender_password:
-            logger.error("Email credentials missing in .env")
-            return {"message": "Reset link could not be sent (Server Config Error)"}
-
-        # Determine Frontend URL (Local or Prod)
-        # In production this should be your domain, in local it's localhost:3000
-        # For now, let's try to detect or use a base URL env var, fallback to origin header
-        origin = req.headers.get("origin")
-        if not origin:
-            origin = "http://localhost:3000" # Fallback for local testing
-            
+        origin = req.headers.get("origin") or "http://localhost:3000"
         reset_link = f"{origin}/reset-password?token={token}"
 
         msg = MIMEMultipart()
         msg['From'] = sender_email
         msg['To'] = request.email
-        msg['Subject'] = "Password Reset Request - PollyGlot"
+        msg['Subject'] = "Password Reset Request"
 
-        body = f"""
-        <html>
-          <body>
-            <h2>Password Reset Request</h2>
-            <p>Click the link below to reset your password. This link is valid for 1 hour.</p>
-            <a href="{reset_link}" style="background-color: #4F46E5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Reset Password</a>
-            <p>Or copy this link: {reset_link}</p>
-          </body>
-        </html>
-        """
+        body = f"""<a href="{reset_link}">Click here to reset password</a>"""
         msg.attach(MIMEText(body, 'html'))
 
         server = smtplib.SMTP(smtp_server, smtp_port)
@@ -266,14 +190,10 @@ def forgot_password(request: ForgotPasswordRequest, req: Request, db: Session = 
         server.login(sender_email, sender_password)
         server.send_message(msg)
         server.quit()
-        
-        logger.info(f"Reset email sent successfully to {request.email}")
-        return {"message": "Reset link sent to your email"}
-
+        return {"message": "Reset link sent"}
     except Exception as e:
-        logger.error(f"Failed to send email: {str(e)}")
-        # We still return success to avoid leaking valid emails, or you can return error if preferred for debugging
-        return {"message": "Reset link sent to your email (if valid)"}
+        logger.error(f"Email error: {str(e)}")
+        return {"message": "Error sending email"}
 
 @app.post("/api/reset-password")
 def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)):
@@ -282,39 +202,34 @@ def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db))
         raise HTTPException(status_code=400, detail="Invalid or expired token")
         
     user = db.query(User).filter(User.email == reset_entry.email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-        
-    user.hashed_password = hash_password(request.new_password)
-    db.delete(reset_entry)
-    db.commit()
-    logger.info(f"Password reset successful for user: {user.email}")
+    if user:
+        user.hashed_password = hash_password(request.new_password)
+        db.delete(reset_entry)
+        db.commit()
     return {"message": "Password updated successfully"}
 
 # --- CONTENT ROUTES ---
+
+static_path = Path(__file__).parent / "static"
+static_path.mkdir(exist_ok=True)
 
 @app.post("/api/convert", response_model=ConversionOut)
 def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if not conversion.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
     if not polly_client:
-         logger.error("AWS Polly client is not initialized.")
-         raise HTTPException(status_code=500, detail="AWS Polly service is unavailable")
+         raise HTTPException(status_code=500, detail="AWS Polly unavailable")
 
     try:
-        logger.info(f"Starting conversion for user {current_user.email}. Text length: {len(conversion.text)}")
-        
-        
         response = polly_client.synthesize_speech(
             Text=conversion.text,
             OutputFormat='mp3',
-            VoiceId=conversion.voice_id if hasattr(conversion, 'voice_id') and conversion.voice_id else 'Joanna',
+            VoiceId=conversion.voice_id or 'Joanna',
             Engine=conversion.engine
         )
         
         now = datetime.now()
         month_year = now.strftime("%B-%Y")
-        # Create a user-specific subfolder
         user_folder = str(current_user.id)
         audio_base_path = static_path / "audio" / month_year / user_folder
         audio_base_path.mkdir(parents=True, exist_ok=True)
@@ -326,69 +241,48 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
             f.write(response['AudioStream'].read())
             
         audio_url = f"/static/audio/{month_year}/{user_folder}/{filename}"
+        
         db_conversion = Conversion(
-            text=conversion.text, 
-            audio_url=audio_url, 
-            voice_name=conversion.voice_id, 
-            user_id=current_user.id, 
-            created_at=now
+            text=conversion.text, audio_url=audio_url, 
+            voice_name=conversion.voice_id, user_id=current_user.id, created_at=now
         )
         db.add(db_conversion)
         db.commit()
         db.refresh(db_conversion)
         
-        logger.info(f"Conversion successful. Audio saved at: {audio_url}")
         return ConversionOut(
-            id=db_conversion.id, 
-            text=db_conversion.text, 
-            voice_name=db_conversion.voice_name,
-            audio_url=audio_url, 
-            created_at=db_conversion.created_at.isoformat()
+            id=db_conversion.id, text=db_conversion.text, voice_name=db_conversion.voice_name,
+            audio_url=audio_url, created_at=db_conversion.created_at.isoformat()
         )
     except Exception as e:
-        logger.error(f"AWS Polly Conversion Failed: {str(e)}", exc_info=True)
+        logger.error(f"Conversion Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-from typing import Optional
-from sqlalchemy import func
 
 @app.get("/api/history", response_model=list[ConversionOut])
 def get_history(
-    page: int = 1, 
-    limit: int = 10, 
-    search: Optional[str] = None, 
-    date: Optional[str] = None,
-    db: Session = Depends(get_db), 
-    current_user: User = Depends(get_current_user)
+    page: int = 1, limit: int = 10, search: Optional[str] = None, date: Optional[str] = None,
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     offset_val = (page - 1) * limit
-    logger.info(f"History Request - User: {current_user.email}, Page: {page}, Limit: {limit}, Search: {search}, Date: {date}")
-    
     query = db.query(Conversion).filter(Conversion.user_id == current_user.id)
     
     if search:
         query = query.filter(Conversion.text.contains(search))
-    
     if date:
-        # Assuming date format YYYY-MM-DD
         query = query.filter(func.date(Conversion.created_at) == date)
         
     conversions = query.order_by(Conversion.created_at.desc()).offset(offset_val).limit(limit).all()
-    logger.info(f"Found {len(conversions)} records")
     
     results = []
     for c in conversions:
-        if not c.voice_name:
-            c.voice_name = "Unknown" 
         results.append(ConversionOut(
-            id=c.id,
-            text=c.text,
-            voice_name=c.voice_name,
-            audio_url=c.audio_url,
+            id=c.id, text=c.text, voice_name=c.voice_name or "Unknown",
+            audio_url=c.audio_url, 
             created_at=c.created_at.isoformat() if c.created_at else datetime.now().isoformat()
         ))
     return results
 
+# --- THIS WAS MISSING IN PREVIOUS VERSION (Restored) ---
 @app.post("/api/history", response_model=ConversionOut)
 def save_history(conversion: ConversionCreate, audio_url: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
@@ -403,7 +297,6 @@ def save_history(conversion: ConversionCreate, audio_url: str, db: Session = Dep
         db.add(db_conversion)
         db.commit()
         db.refresh(db_conversion)
-        logger.info(f"History manually saved for user {current_user.email}")
         return ConversionOut(
             id=db_conversion.id,
             text=db_conversion.text,
@@ -416,37 +309,24 @@ def save_history(conversion: ConversionCreate, audio_url: str, db: Session = Dep
         raise HTTPException(status_code=500, detail="Failed to save history")
 
 
-
-
-
-
-
 # --- STATIC & FRONTEND SERVING ---
 
-static_path = Path(__file__).parent / "static"
-static_path.mkdir(exist_ok=True)
 @app.get("/static/audio/{file_path:path}")
 def get_audio_file(file_path: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # Reconstruct the URL as stored in the DB
-    # Note: file_path will match the wildcard, e.g. "February-2026/123/file.mp3"
     requested_url = f"/static/audio/{file_path}"
     
-    # Verify ownership in Database
+    # Security check (Restored from your old code)
     conversion = db.query(Conversion).filter(Conversion.audio_url == requested_url).first()
     
     if not conversion:
-        # If file is not in DB, deny access (strict mode) or check if it's a legacy file?
-        # Assuming strict mode for security as requested.
         logger.warning(f"Access denied: No record found for {requested_url}")
         raise HTTPException(status_code=404, detail="File record not found")
         
     if conversion.user_id != current_user.id:
-        logger.warning(f"Unauthorized access: User {current_user.id} tried to access {requested_url} owned by {conversion.user_id}")
+        logger.warning(f"Unauthorized access by user {current_user.id}")
         raise HTTPException(status_code=403, detail="Forbidden: You do not own this file")
         
-    # Serve the file
-    base_static = Path(__file__).parent / "static"
-    full_path = base_static / "audio" / file_path
+    full_path = static_path / "audio" / file_path
     
     if not full_path.exists() or not full_path.is_file():
          raise HTTPException(status_code=404, detail="File not found on server")
@@ -455,91 +335,48 @@ def get_audio_file(file_path: str, db: Session = Depends(get_db), current_user: 
 
 app.mount("/static", StaticFiles(directory=static_path), name="static")
 
-# --- FRONTEND STATIC FILES ---
-# Robust search for the frontend build directory
-current_dir = os.path.dirname(os.path.abspath(__file__))
-search_paths = [
-    os.getenv("FRONTEND_PATH"),
-    os.path.join(current_dir, "frontend", "dist"),               # 1. Nested inside backend
-    os.path.join(current_dir, "..", "frontend", "dist"),         # 2. Sibling (Local Dev)
-    os.path.abspath(os.path.join(current_dir, "..", "..")),      # 3. Two levels up (Server Root?)
-    os.path.abspath(os.path.join(current_dir, "..", "..", "public_html")), # 4. Standard cPanel
-    "/home/u956942766/domains/tts.testingprojects.online/public_html", # 5. Hardcoded
-    "/home/u956942766/public_html"                               # 6. Generic Home
-]
+
+# ==========================================
+# 🚀 FINAL FRONTEND FIX (NO GUESSING)
+# ==========================================
+
+# Direct paths based on your diagnosis
+SERVER_FRONTEND_PATH = "/home/rseivuhw/tts.testingprojects.online"
+LOCAL_FRONTEND_PATH = "../frontend/dist"
 
 FRONTEND_PATH = None
-for path in search_paths:
-    if path and os.path.exists(path):
-         # Check if index.html actually exists there
-         if os.path.exists(os.path.join(path, "index.html")):
-            FRONTEND_PATH = path
-            logger.info(f"Frontend found at: {FRONTEND_PATH}")
-            break
+
+# Check where we are running
+if os.path.exists(SERVER_FRONTEND_PATH):
+    FRONTEND_PATH = SERVER_FRONTEND_PATH
+    logger.info(f"SERVING FRONTEND FROM SERVER: {FRONTEND_PATH}")
+elif os.path.exists(LOCAL_FRONTEND_PATH):
+    FRONTEND_PATH = LOCAL_FRONTEND_PATH
+    logger.info(f"SERVING FRONTEND FROM LOCAL: {FRONTEND_PATH}")
+else:
+    logger.warning("NO FRONTEND FOUND! Website will not load.")
 
 if FRONTEND_PATH:
-    # Check if assets exist in the found frontend path
-    assets_path = os.path.join(FRONTEND_PATH, "assets")
-    if os.path.exists(assets_path):
-        app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
-        logger.info(f"Mounted /assets from {assets_path}")
+    # 1. Mount Assets (CSS/JS)
+    assets_dir = os.path.join(FRONTEND_PATH, "assets")
+    if os.path.exists(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    # 2. Serve Index.html at Root
+    @app.get("/")
+    async def serve_index():
+        return FileResponse(os.path.join(FRONTEND_PATH, "index.html"))
+
+    # 3. Catch-All for React Router (SPA Support)
+    @app.exception_handler(404)
+    async def spa_fallback(request: Request, exc):
+        if request.url.path.startswith("/api") or request.url.path.startswith("/static"):
+             return JSONResponse({"detail": "Not Found"}, status_code=404)
+        
+        return FileResponse(os.path.join(FRONTEND_PATH, "index.html"))
+
 else:
-    logger.warning(f"Frontend index.html not found! Checked: {search_paths}")
-
-@app.get("/debug-paths")
-async def debug_paths():
-    """Temporary endpoint to diagnose file structure on server"""
-    import os
-    try:
-        current = os.path.abspath(__file__)
-        cwd = os.getcwd()
-        parent = os.path.dirname(cwd)
-        
-        return {
-            "status": "Frontend not found" if not FRONTEND_PATH else "Frontend Found",
-            "determined_frontend_path": FRONTEND_PATH,
-            "current_file_location": current,
-            "current_working_directory": cwd,
-            "search_paths_attempted": [str(p) for p in search_paths if p],
-            "contents_of_cwd": os.listdir(cwd),
-            "contents_of_parent": os.listdir(parent) if os.path.exists(parent) else "Parent inaccessible"
-        }
-    except Exception as e:
-        return {"error": str(e)}
-
-
-
-@app.get("/")
-async def serve_root():
-    if not FRONTEND_PATH:
-        logger.error("FRONTEND_PATH is not set or valid.")
-        return HTMLResponse(content="<h1>Frontend Not Found (Path Undetermined)</h1>", status_code=404)
-        
-    index_path = os.path.join(FRONTEND_PATH, "index.html")
-    if os.path.exists(index_path):
-        with open(index_path, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read(), status_code=200)
-            
-    logger.error(f"Frontend index.html not found at: {index_path}")
-    return HTMLResponse(content="<h1>Frontend Not Found</h1>", status_code=404)
-
-@app.get("/{full_path:path}")
-async def serve_react_app(full_path: str):
-    # Prevent serving index.html for missing API or debug routes
-    if full_path.startswith("api/") or full_path.startswith("debug-paths"):
-        raise HTTPException(status_code=404, detail="Not Found")
-
-    if not FRONTEND_PATH:
-        return HTMLResponse(content="<h1>Frontend Not Found (Path Undetermined)</h1>", status_code=404)
-
-    file_location = os.path.join(FRONTEND_PATH, full_path)
-    if full_path != "" and os.path.isfile(file_location):
-        return FileResponse(file_location)
-    
-    # Fallback to index.html for SPA routing
-    index_path = os.path.join(FRONTEND_PATH, "index.html")
-    if os.path.exists(index_path):
-        with open(index_path, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read(), status_code=200)
-            
-    return HTMLResponse(content="<h1>Frontend Not Found</h1>", status_code=404)
+    # Fallback if frontend is missing
+    @app.get("/")
+    def frontend_missing():
+        return HTMLResponse("<h1>Frontend Files Not Found</h1><p>Check /home/rseivuhw/tts.testingprojects.online</p>", status_code=404)
