@@ -4,15 +4,35 @@ import Register from './components/Register'
 import Dashboard from './components/Dashboard'
 import ForgotPassword from './components/ForgotPassword'
 import ResetPassword from './components/ResetPassword'
+import AdminLayout from './components/AdminLayout'
+import AdminDashboard from './components/AdminDashboard'
 import { authAPI } from './api/auth'
 import './index.css'
+
+function AdminView() {
+  const [activeTab, setActiveTab] = useState('dashboard')
+
+  return (
+    <AdminLayout activeTab={activeTab} onTabChange={setActiveTab}>
+      {activeTab === 'dashboard' && <AdminDashboard />}
+      {activeTab === 'users' && <div className="text-white">Users Management (Coming Soon)</div>}
+      {activeTab === 'settings' && <div className="text-white">Settings (Coming Soon)</div>}
+    </AdminLayout>
+  )
+}
 
 export default function App() {
   const [page, setPage] = useState('login')
   const [successMessage, setSuccessMessage] = useState('')
   const isAuthenticated = authAPI.isAuthenticated()
+  const userEmail = authAPI.getUserEmail()
 
   if (isAuthenticated) {
+    // Simple check for admin routing. 
+    // Real security is handled by the backend rejecting non-admin requests.
+    if (userEmail && userEmail.toLowerCase() === 'admin@gmail.com') {
+      return <AdminView />
+    }
     return <Dashboard />
   }
 
@@ -34,7 +54,8 @@ export default function App() {
         <Login
           onSuccess={(msg) => {
             setSuccessMessage(msg)
-            setTimeout(() => window.location.reload(), 1500)
+            // Reload to update authentication state
+            setTimeout(() => window.location.reload(), 1000)
           }}
           onSwitchToRegister={() => setPage('register')}
           onSwitchToForgotPassword={() => setPage('forgot-password')}
