@@ -7,7 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from sqlalchemy.orm import Session
 from database import engine, Base, get_db
-from models import User, Conversion, PasswordReset
+from models import User, Conversion, PasswordReset, Transaction
 from schemas import UserCreate, UserOut, Token, ForgotPasswordRequest, ResetPasswordRequest
 from auth import hash_password, verify_password, create_access_token, generate_user_id
 import boto3
@@ -25,6 +25,8 @@ from typing import Optional
 from sqlalchemy import func
 from fastapi.security import OAuth2PasswordBearer
 from auth import verify_token
+# --- AUTO MIGRATION ---
+from auto_migrate import run_auto_migrations
 
 # --- 1. SENTRY CONFIGURATION ---
 sentry_sdk.init(
@@ -44,11 +46,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Load .env file
 load_dotenv(Path(__file__).parent / ".env")
 
 app = FastAPI()
 
-# Create Database Tables
+# Handle DB Migrations (Existing Schema Changes)
+run_auto_migrations()
+
+# Create NEW Tables (if they don't exist)
 Base.metadata.create_all(bind=engine)
 
 # --- 3. GLOBAL ERROR CATCHER ---
@@ -208,6 +214,47 @@ def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db))
         db.commit()
     return {"message": "Password updated successfully"}
 
+# --- ADMIN ROUTES ---
+
+@app.get("/api/admin/stats")
+def get_admin_stats(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # 1. Check if user is admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access required")
+
+    # 2. Total Users Count
+    total_users = db.query(User).count()
+
+    # 3. Total Earnings (Sum of all transactions)
+    total_earnings_result = db.query(func.sum(Transaction.amount)).scalar()
+    total_earnings = total_earnings_result if total_earnings_result else 0.0
+
+    # 4. User Plan Breakdown
+    plan_counts = db.query(Transaction.plan_type, func.count(Transaction.plan_type))\
+        .group_by(Transaction.plan_type).all()
+    user_plan_breakdown = {plan: count for plan, count in plan_counts}
+
+    # 5. Recent Activity
+    recent_activity = db.query(Conversion).order_by(Conversion.created_at.desc()).limit(5).all()
+    
+    activity_data = []
+    for item in recent_activity:
+        user = db.query(User).filter(User.id == item.user_id).first()
+        activity_data.append({
+            "id": item.id,
+            "user": user.email if user else "Unknown",
+            "action": "Conversion",
+            "details": f"Generated audio: {item.text[:20]}...",
+            "date": item.created_at.isoformat()
+        })
+
+    return {
+        "totalUsers": total_users,
+        "totalEarnings": total_earnings,
+        "userPlanBreakdown": user_plan_breakdown,
+        "recentActivity": activity_data
+    }
+
 # --- CONTENT ROUTES ---
 
 static_path = Path(__file__).parent / "static"
@@ -282,7 +329,6 @@ def get_history(
         ))
     return results
 
-# --- THIS WAS MISSING IN PREVIOUS VERSION (Restored) ---
 @app.post("/api/history", response_model=ConversionOut)
 def save_history(conversion: ConversionCreate, audio_url: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
@@ -315,7 +361,7 @@ def save_history(conversion: ConversionCreate, audio_url: str, db: Session = Dep
 def get_audio_file(file_path: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     requested_url = f"/static/audio/{file_path}"
     
-    # Security check (Restored from your old code)
+    # Security check
     conversion = db.query(Conversion).filter(Conversion.audio_url == requested_url).first()
     
     if not conversion:
@@ -337,37 +383,31 @@ app.mount("/static", StaticFiles(directory=static_path), name="static")
 
 
 # ==========================================
-# 🚀 FINAL FRONTEND FIX (NO GUESSING)
+# 🚀 FINAL FRONTEND FIX (ENV VARIABLE SUPPORT)
 # ==========================================
 
-# Direct paths based on your diagnosis
-SERVER_FRONTEND_PATH = "/home/rseivuhw/tts.testingprojects.online"
-LOCAL_FRONTEND_PATH = "../frontend/dist"
+# 1. Get Path from Environment Variable (Best Practice)
+FRONTEND_PATH = os.getenv("FRONTEND_PATH")
 
-FRONTEND_PATH = None
+if not FRONTEND_PATH:
+    logger.warning("FRONTEND_PATH not found in .env file! Frontend may not load.")
+    FRONTEND_PATH = None
 
-# Check where we are running
-if os.path.exists(SERVER_FRONTEND_PATH):
-    FRONTEND_PATH = SERVER_FRONTEND_PATH
-    logger.info(f"SERVING FRONTEND FROM SERVER: {FRONTEND_PATH}")
-elif os.path.exists(LOCAL_FRONTEND_PATH):
-    FRONTEND_PATH = LOCAL_FRONTEND_PATH
-    logger.info(f"SERVING FRONTEND FROM LOCAL: {FRONTEND_PATH}")
-else:
-    logger.warning("NO FRONTEND FOUND! Website will not load.")
+# 2. Serve Files if Path Exists
+if FRONTEND_PATH and os.path.exists(FRONTEND_PATH):
+    logger.info(f"SERVING FRONTEND FROM: {FRONTEND_PATH}")
 
-if FRONTEND_PATH:
-    # 1. Mount Assets (CSS/JS)
+    # Mount Assets (CSS/JS)
     assets_dir = os.path.join(FRONTEND_PATH, "assets")
     if os.path.exists(assets_dir):
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
-    # 2. Serve Index.html at Root
+    # Serve Index.html at Root
     @app.get("/")
     async def serve_index():
         return FileResponse(os.path.join(FRONTEND_PATH, "index.html"))
 
-    # 3. Catch-All for React Router (SPA Support)
+    # Catch-All for React Router (SPA Support)
     @app.exception_handler(404)
     async def spa_fallback(request: Request, exc):
         if request.url.path.startswith("/api") or request.url.path.startswith("/static"):
@@ -376,7 +416,11 @@ if FRONTEND_PATH:
         return FileResponse(os.path.join(FRONTEND_PATH, "index.html"))
 
 else:
-    # Fallback if frontend is missing
+    # Fallback if frontend is missing or path is wrong
     @app.get("/")
     def frontend_missing():
-        return HTMLResponse("<h1>Frontend Files Not Found</h1><p>Check /home/rseivuhw/tts.testingprojects.online</p>", status_code=404)
+        return HTMLResponse(
+            "<h1>Frontend Files Not Found</h1>"
+            "<p>Please check if <b>FRONTEND_PATH</b> is set correctly in your <b>.env</b> file.</p>", 
+            status_code=404
+        )
