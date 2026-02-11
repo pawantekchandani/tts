@@ -32,6 +32,9 @@ class UserOut(BaseModel):
     class Config:
         from_attributes = True
 
+class UserProfile(UserOut):
+    plan_type: str
+
 class Token(BaseModel):
     access_token: str
     token_type: str

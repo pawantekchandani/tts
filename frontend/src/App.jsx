@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Login from './components/Login'
 import Register from './components/Register'
 import Dashboard from './components/Dashboard'
@@ -26,16 +26,26 @@ function AdminView() {
 export default function App() {
   const [page, setPage] = useState('login')
   const [successMessage, setSuccessMessage] = useState('')
+  const [userPlan, setUserPlan] = useState(authAPI.getUserPlan())
   const isAuthenticated = authAPI.isAuthenticated()
   const userEmail = authAPI.getUserEmail()
 
+  // Sync plan with backend on mounting
+  useEffect(() => {
+    if (isAuthenticated) {
+      authAPI.getProfile().then(profile => {
+        if (profile && profile.plan_type) {
+          setUserPlan(profile.plan_type);
+        }
+      });
+    }
+  }, [isAuthenticated]);
+
   if (isAuthenticated) {
-    // Simple check for admin routing. 
-    // Real security is handled by the backend rejecting non-admin requests.
     if (userEmail && userEmail.toLowerCase() === 'admin@gmail.com') {
       return <AdminView />
     }
-    return <Dashboard userPlan={authAPI.getUserPlan()} />
+    return <Dashboard userPlan={userPlan} />
   }
 
   return (

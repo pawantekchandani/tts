@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from sqlalchemy.orm import Session
 from database import engine, Base, get_db
 from models import User, Conversion, PasswordReset, Transaction, PlanLimits, DownloadHistory
-from schemas import UserCreate, UserOut, Token, ForgotPasswordRequest, ResetPasswordRequest, PlanLimitUpdate
+from schemas import UserCreate, UserOut, Token, ForgotPasswordRequest, ResetPasswordRequest, PlanLimitUpdate, UserProfile
 from auth import hash_password, verify_password, create_access_token, generate_user_id
 import boto3
 import os
@@ -168,6 +168,19 @@ def login(user: UserCreate, db: Session = Depends(get_db)):
     plan_type = latest_tx.plan_type if latest_tx else "Basic"
     
     return {"access_token": access_token, "token_type": "bearer", "plan_type": plan_type}
+
+@app.get("/api/me", response_model=UserProfile)
+def get_current_user_profile(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Get user plan from latest transaction
+    latest_tx = db.query(Transaction).filter(Transaction.user_id == current_user.id).order_by(Transaction.timestamp.desc()).first()
+    plan_type = latest_tx.plan_type if latest_tx else "Basic"
+    
+    return UserProfile(
+        id=current_user.id,
+        email=current_user.email,
+        is_admin=current_user.is_admin,
+        plan_type=plan_type
+    )
 
 @app.post("/api/forgot-password")
 def forgot_password(request: ForgotPasswordRequest, req: Request, db: Session = Depends(get_db)):
