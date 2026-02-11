@@ -61,6 +61,25 @@ export const authAPI = {
     }
   },
 
+  // NEW: Fetch full user profile (including current plan)
+  getProfile: async () => {
+    try {
+      const token = localStorage.getItem('access_token')
+      const response = await axiosInstance.get(`${API_BASE_URL}/me`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      // Update local storage if plan changed
+      if (response.data.plan_type) {
+        localStorage.setItem('user_plan', response.data.plan_type)
+      }
+      return response.data;
+    } catch (error) {
+      console.error("Failed to fetch profile:", error);
+      // Don't throw, just return null so app doesn't crash on background sync
+      return null;
+    }
+  },
+
   // NEW: Function to fetch your downloads using the /api prefix
   getDownloads: async () => {
     try {
