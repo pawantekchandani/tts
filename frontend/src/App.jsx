@@ -7,6 +7,7 @@ import ResetPassword from './components/ResetPassword'
 import AdminLayout from './components/AdminLayout'
 import AdminDashboard from './components/AdminDashboard'
 import PlanSettings from './components/PlanSettings'
+import UserManagement from './components/UserManagement'
 import { authAPI } from './api/auth'
 import './index.css'
 
@@ -16,7 +17,7 @@ function AdminView() {
   return (
     <AdminLayout activeTab={activeTab} onTabChange={setActiveTab}>
       {activeTab === 'dashboard' && <AdminDashboard />}
-      {activeTab === 'users' && <div className="text-white">Users Management (Coming Soon)</div>}
+      {activeTab === 'users' && <UserManagement />}
       {activeTab === 'settings' && <PlanSettings />}
     </AdminLayout>
   )
@@ -34,7 +35,7 @@ export default function App() {
     if (userEmail && userEmail.toLowerCase() === 'admin@gmail.com') {
       return <AdminView />
     }
-    return <Dashboard />
+    return <Dashboard userPlan={authAPI.getUserPlan()} />
   }
 
   return (

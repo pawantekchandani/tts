@@ -51,6 +51,7 @@ export const authAPI = {
       })
       localStorage.setItem('access_token', response.data.access_token)
       localStorage.setItem('user_email', email)
+      localStorage.setItem('user_plan', response.data.plan_type || 'Basic')
       return response.data
     } catch (error) {
       if (error.code === 'ECONNABORTED') {
@@ -78,11 +79,13 @@ export const authAPI = {
   logout: () => {
     localStorage.removeItem('access_token')
     localStorage.removeItem('user_email')
+    localStorage.removeItem('user_plan')
     localStorage.removeItem('conversionHistory')
   },
 
   getToken: () => localStorage.getItem('access_token'),
   getUserEmail: () => localStorage.getItem('user_email'),
+  getUserPlan: () => localStorage.getItem('user_plan'),
   isAuthenticated: () => !!localStorage.getItem('access_token'),
 
   forgotPassword: async (email) => {

@@ -70,15 +70,16 @@ const PlanSettings = () => {
                 Plan Settings
             </h2>
 
-            <div className="bg-gray-800 rounded-2xl border border-gray-700 shadow-xl overflow-hidden">
+            {/* Desktop Table View */}
+            <div className="hidden md:block bg-gray-800 rounded-2xl border border-gray-700 shadow-xl overflow-hidden">
                 <table className="w-full text-left">
                     <thead className="bg-gray-700/50 text-gray-300 uppercase text-sm font-bold">
                         <tr>
                             <th className="px-6 py-4">Plan Name</th>
-                            <th className="px-6 py-4">Chats / Day</th>
-                            <th className="px-6 py-4">Context Size (Chars)</th>
-                            <th className="px-6 py-4">Download Limit</th>
-                            <th className="px-6 py-4">History (Days)</th>
+                            <th className="px-6 py-4 text-center">Chats / Day</th>
+                            <th className="px-6 py-4 text-center">Context Size (Chars)</th>
+                            <th className="px-6 py-4 text-center">Download Limit</th>
+                            <th className="px-6 py-4 text-center">History (Days)</th>
                             <th className="px-6 py-4 text-right">Actions</th>
                         </tr>
                     </thead>
@@ -102,6 +103,42 @@ const PlanSettings = () => {
                         ))}
                     </tbody>
                 </table>
+            </div>
+
+            {/* Mobile Card View */}
+            <div className="md:hidden grid grid-cols-1 gap-4">
+                {plans.map((plan) => (
+                    <div key={plan.id} className="bg-gray-800 rounded-2xl border border-gray-700 p-5 shadow-lg relative">
+                        <div className="flex justify-between items-center mb-4 border-b border-gray-700 pb-3">
+                            <h3 className="text-xl font-bold text-white">{plan.plan_name}</h3>
+                            <button
+                                onClick={() => handleEdit(plan)}
+                                className="text-blue-400 hover:text-blue-300 bg-blue-500/10 p-2 rounded-lg"
+                            >
+                                <Pencil size={18} />
+                            </button>
+                        </div>
+
+                        <div className="space-y-3">
+                            <div className="flex justify-between items-center">
+                                <span className="text-gray-400 text-sm">Chats / Day</span>
+                                <span className="text-white font-medium">{plan.chats_per_day}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-gray-400 text-sm">Context Limit</span>
+                                <span className="text-white font-medium">{plan.context_limit} chars</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-gray-400 text-sm">Download Limit</span>
+                                <span className="text-white font-medium">{plan.download_limit}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-gray-400 text-sm">History Retention</span>
+                                <span className="text-white font-medium">{plan.history_days} days</span>
+                            </div>
+                        </div>
+                    </div>
+                ))}
             </div>
 
             {/* Edit Modal / Overlay */}

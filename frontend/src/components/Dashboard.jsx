@@ -8,7 +8,7 @@ import ChatHistory from './ChatHistory';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:8000`;
 
-export default function Dashboard() {
+export default function Dashboard({ userPlan }) {
   const [text, setText] = useState('');
   const [voice, setVoice] = useState('Kajal');
   const [engine, setEngine] = useState('neural');
@@ -166,6 +166,14 @@ export default function Dashboard() {
           <span className="hidden sm:block text-sm text-gray-400">
             {authAPI.getUserEmail()}
           </span>
+          <span className={`px-2 py-1 rounded-full text-xs font-bold uppercase
+            ${(userPlan || 'Basic').toLowerCase() === 'pro' ? 'bg-indigo-500' :
+              (userPlan || 'Basic').toLowerCase() === 'plus' ? 'bg-purple-600' :
+                'bg-slate-600'
+            }
+          `}>
+            {userPlan || 'Free'}
+          </span>
 
           <button
             onClick={handleLogout}
@@ -175,10 +183,10 @@ export default function Dashboard() {
             Logout
           </button>
         </div>
-      </nav>
+      </nav >
 
       {/* MAIN */}
-      <main className="max-w-6xl mx-auto px-4 py-6 sm:py-10">
+      < main className="max-w-6xl mx-auto px-4 py-6 sm:py-10" >
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
 
           {/* INPUT */}
@@ -384,7 +392,7 @@ export default function Dashboard() {
       </main >
 
       {/* HISTORY MODAL */}
-      <AnimatePresence>
+      < AnimatePresence >
         {showHistoryModal && (
           <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex justify-end">
             <motion.div
@@ -396,11 +404,12 @@ export default function Dashboard() {
               <ChatHistory onClose={() => setShowHistoryModal(false)} />
             </motion.div>
           </div>
-        )}
-      </AnimatePresence>
+        )
+        }
+      </AnimatePresence >
 
       {/* DETAILS MODAL */}
-      <AnimatePresence>
+      < AnimatePresence >
         {selectedItem && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
             <motion.div
@@ -459,7 +468,7 @@ export default function Dashboard() {
             </motion.div>
           </div>
         )}
-      </AnimatePresence>
-    </div>
+      </AnimatePresence >
+    </div >
   );
 }
