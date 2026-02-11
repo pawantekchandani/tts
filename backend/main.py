@@ -150,6 +150,45 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
 
         db.commit()
         db.refresh(db_user)
+
+        # --- Send Welcome Email ---
+        try:
+            sender_email = os.getenv("MAIL_USERNAME")
+            sender_password = os.getenv("MAIL_PASSWORD")
+            smtp_server = os.getenv("MAIL_SERVER", "smtp.gmail.com")
+            smtp_port = int(os.getenv("MAIL_PORT", "587"))
+
+            if sender_email and sender_password:
+                msg = MIMEMultipart()
+                msg['From'] = sender_email
+                msg['To'] = user.email
+                msg['Subject'] = "Welcome to Pollyglot - Successfully Registered!"
+
+                body = f"""
+                <div style="font-family: Arial, sans-serif; color: #333;">
+                    <h2 style="color: #ea580c;">Welcome to Pollyglot! 🎧</h2>
+                    <p>Hi there,</p>
+                    <p>Thank you for joining <b>Pollyglot</b>! Your account has been successfully created.</p>
+                    <p>You can now log in and start converting text to lifelike speech instantly.</p>
+                    <div style="margin: 20px 0;">
+                        <a href="http://localhost:5173/login" style="background-color: #ea580c; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Login to Dashboard</a>
+                    </div>
+                    <p>If you have any questions, feel free to rely to this email.</p>
+                    <br>
+                    <p>Best Regards,</p>
+                    <p><b>The Pollyglot Team</b></p>
+                </div>
+                """
+                msg.attach(MIMEText(body, 'html'))
+
+                server = smtplib.SMTP(smtp_server, smtp_port)
+                server.starttls()
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+                server.quit()
+        except Exception as e:
+            logger.error(f"Failed to send welcome email: {str(e)}")
+
         return db_user
     except Exception as e:
         logger.error(f"Signup Error: {str(e)}")

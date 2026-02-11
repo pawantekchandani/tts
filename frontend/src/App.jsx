@@ -24,7 +24,13 @@ function AdminView() {
 }
 
 export default function App() {
-  const [page, setPage] = useState('login')
+  const [page, setPage] = useState(() => {
+    const path = window.location.pathname;
+    if (path === '/reset-password') return 'reset-password';
+    if (path === '/register') return 'register';
+    if (path === '/forgot-password') return 'forgot-password';
+    return 'login';
+  })
   const [successMessage, setSuccessMessage] = useState('')
   const [userPlan, setUserPlan] = useState(authAPI.getUserPlan())
   const isAuthenticated = authAPI.isAuthenticated()
