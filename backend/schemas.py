@@ -35,6 +35,7 @@ class UserOut(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+    plan_type: str = "Basic"
 
 class ConversionCreate(BaseModel):
     text: str
@@ -74,5 +75,6 @@ class PlanLimitUpdate(BaseModel):
     download_limit: int
     history_days: int
 
-
-
+class UserPlanUpdate(BaseModel):
+    user_id: str
+    plan_type: str
