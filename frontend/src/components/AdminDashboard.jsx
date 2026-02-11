@@ -3,6 +3,7 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recha
 import { DollarSign, Users, Activity, Loader } from 'lucide-react';
 import axios from 'axios';
 
+
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#A259FF'];
 
 const AdminDashboard = () => {
@@ -176,5 +177,6 @@ const AdminDashboard = () => {
         </div>
     );
 };
+
 
 export default AdminDashboard;

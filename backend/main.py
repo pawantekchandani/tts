@@ -28,6 +28,8 @@ from auth import verify_token
 # --- AUTO MIGRATION ---
 from auto_migrate import run_auto_migrations
 from utils import check_user_limits
+from dependencies import get_current_user
+import admin_routes
 
 # --- 1. SENTRY CONFIGURATION ---
 sentry_sdk.init(
@@ -51,6 +53,8 @@ logger = logging.getLogger(__name__)
 load_dotenv(Path(__file__).parent / ".env")
 
 app = FastAPI()
+
+app.include_router(admin_routes.router)
 
 # Handle DB Migrations (Existing Schema Changes)
 # Handle DB Migrations (Existing Schema Changes)
@@ -107,27 +111,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 
 # --- AUTH DEPENDENCIES ---
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
-
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    payload = verify_token(token)
-    if payload is None:
-        raise credentials_exception
-        
-    user_id_str: str = payload.get("sub")
-    if user_id_str is None:
-        raise credentials_exception
-        
-    user = db.query(User).filter(User.id == user_id_str).first()
-    if user is None:
-        raise credentials_exception
-        
-    return user
+# Moved to dependencies.py
 
 @app.get("/health")
 def health_check():
@@ -153,6 +137,17 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
 
         db_user = User(id=new_id, email=user.email, hashed_password=hashed_password)
         db.add(db_user)
+        db.flush()
+
+        # Create default transaction for the new user
+        new_transaction = Transaction(
+            user_id=new_id,
+            plan_type='basic',
+            amount=0,
+            timestamp=datetime.utcnow()
+        )
+        db.add(new_transaction)
+
         db.commit()
         db.refresh(db_user)
         return db_user
@@ -167,7 +162,12 @@ def login(user: UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
     access_token = create_access_token(data={"sub": str(db_user.id)})
-    return {"access_token": access_token, "token_type": "bearer"}
+    
+    # Get user plan
+    latest_tx = db.query(Transaction).filter(Transaction.user_id == db_user.id).order_by(Transaction.timestamp.desc()).first()
+    plan_type = latest_tx.plan_type if latest_tx else "Basic"
+    
+    return {"access_token": access_token, "token_type": "bearer", "plan_type": plan_type}
 
 @app.post("/api/forgot-password")
 def forgot_password(request: ForgotPasswordRequest, req: Request, db: Session = Depends(get_db)):
