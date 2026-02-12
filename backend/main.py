@@ -135,21 +135,38 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
         else:
              raise HTTPException(status_code=500, detail="Could not generate unique User ID")
 
-        db_user = User(id=new_id, email=user.email, hashed_password=hashed_password)
-        db.add(db_user)
-        db.flush()
+        # 1. Create User
+        try:
+            db_user = User(id=new_id, email=user.email, hashed_password=hashed_password)
+            db.add(db_user)
+            db.flush() # Verify user creation before transaction
+        except Exception as e:
+             logger.error(f"Error creating user in DB: {str(e)}")
+             raise HTTPException(status_code=500, detail=f"Database Error (User Creation): {str(e)}")
 
-        # Create default transaction for the new user
-        new_transaction = Transaction(
-            user_id=new_id,
-            plan_type='basic',
-            amount=0,
-            timestamp=datetime.utcnow()
-        )
-        db.add(new_transaction)
+        # 2. Create Transaction
+        try:
+            new_transaction = Transaction(
+                user_id=new_id,
+                plan_type='basic',
+                amount=0,
+                timestamp=datetime.utcnow()
+            )
+            db.add(new_transaction)
+            db.flush() # Verify transaction creation
+        except Exception as e:
+             logger.error(f"Error creating transaction: {str(e)}")
+             # This often happens if 'transactions' table is missing
+             raise HTTPException(status_code=500, detail=f"Database Error (Transaction Creation): {str(e)}")
 
-        db.commit()
-        db.refresh(db_user)
+        # 3. Commit Everything
+        try:
+            db.commit()
+            db.refresh(db_user)
+        except Exception as e:
+             logger.error(f"Error committing signup: {str(e)}")
+             db.rollback()
+             raise HTTPException(status_code=500, detail=f"Database Commit Error: {str(e)}")
 
         # --- Send Welcome Email ---
         try:
