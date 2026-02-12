@@ -28,6 +28,17 @@ def run_auto_migrations():
             else:
                 logger.info("Schema Check: 'is_admin' column already exists.")
 
+            # Check if 'transactions' table exists
+            if not inspector.has_table("transactions"):
+                logger.warning("Migration Warning: 'transactions' table missing! Base.metadata.create_all() should have created it.")
+                # Force creation of transactions table specifically if missing
+                try:
+                    from models import Transaction
+                    Transaction.__table__.create(engine)
+                    logger.info("Migration: 'transactions' table created successfully.")
+                except Exception as e:
+                    logger.error(f"Migration Error: Failed to create 'transactions' table: {e}")
+
             # 2. Grant Admin Access Automatically
             grant_admin_access("Admin@gmail.com")
                 
