@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import toWav from 'audiobuffer-to-wav';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LogOut, Play, Download, Loader, Sparkles, FileText, Music, Trash2, Maximize2, X, ChevronRight } from 'lucide-react';
 import { authAPI, axiosInstance as axios } from '../api/auth';
@@ -8,7 +9,8 @@ import ChatHistory from './ChatHistory';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:8000`;
 
-export default function Dashboard({ userPlan }) {
+export default function Dashboard({ userPlan, onNavigate }) {
+
   const [text, setText] = useState('');
   const [voice, setVoice] = useState('Kajal');
   const [engine, setEngine] = useState('neural');
@@ -22,6 +24,8 @@ export default function Dashboard({ userPlan }) {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [speed, setSpeed] = useState(1.0);
+  const audioRef = useRef(null);
 
   useEffect(() => {
     fetchHistory(true);
@@ -30,6 +34,12 @@ export default function Dashboard({ userPlan }) {
   useEffect(() => {
     setVoice(engine === 'neural' ? 'Kajal' : 'Aditi');
   }, [engine]);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = speed;
+    }
+  }, [speed]);
 
   const fetchHistory = async (reset = false) => {
     if (loadingHistory) return;
@@ -155,7 +165,10 @@ export default function Dashboard({ userPlan }) {
 
       {/* NAVBAR */}
       <nav className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-8 py-4 border-b border-white/5 sticky top-0 z-50 bg-brand-dark/90 backdrop-blur">
-        <div className="flex items-center gap-2">
+        <div
+          className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+          onClick={() => onNavigate && onNavigate('home')}
+        >
           <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-brand-blue to-brand-purple flex items-center justify-center">
             <Sparkles className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
@@ -257,6 +270,7 @@ export default function Dashboard({ userPlan }) {
                   <AudioVisualizer isPlaying={isPlaying} />
 
                   <audio
+                    ref={audioRef}
                     controls
                     src={audioUrl}
                     className="w-full mt-4"
@@ -265,12 +279,32 @@ export default function Dashboard({ userPlan }) {
                     onEnded={() => setIsPlaying(false)}
                   />
 
+                  {/* Playback Speed Control */}
+                  <div className="mt-4 bg-black/40 p-4 rounded-xl border border-white/5 space-y-2">
+                    <div className="flex justify-between items-center text-xs text-brand-gray font-medium uppercase tracking-wider">
+                      <span>Slower (0.5x)</span>
+                      <span className="text-white bg-brand-blue/20 px-2 py-1 rounded-md">Speed: {speed}x</span>
+                      <span>Faster (2.0x)</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="2.0"
+                      step="0.1"
+                      value={speed}
+                      onChange={(e) => setSpeed(parseFloat(e.target.value))}
+                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-brand-blue hover:accent-brand-lightBlue transition-all"
+                    />
+                  </div>
+
                   <button
                     onClick={async () => {
                       if (!currentConversionId) {
                         alert("Cannot download: Conversion ID missing. Please regenerate.");
                         return;
                       }
+
+                      setIsLoading(true);
 
                       try {
                         const token = authAPI.getToken();
@@ -283,13 +317,40 @@ export default function Dashboard({ userPlan }) {
                           throw new Error(errorData.detail || 'Download failed');
                         }
 
-                        const blob = await response.blob();
+                        let blob = await response.blob();
+                        let fileName = `pollyglot_${new Date().getTime()}.mp3`;
+
+                        // --- SPEED PROCESSING ---
+                        if (speed !== 1.0) {
+                          try {
+                            const arrayBuffer = await blob.arrayBuffer();
+                            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                            const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+
+                            const newDuration = audioBuffer.duration / speed;
+                            const offlineCtx = new OfflineAudioContext(
+                              audioBuffer.numberOfChannels,
+                              Math.ceil(audioBuffer.sampleRate * newDuration),
+                              audioBuffer.sampleRate
+                            );
+
+                            const source = offlineCtx.createBufferSource();
+                            source.buffer = audioBuffer;
+                            source.playbackRate.value = speed;
+                            source.connect(offlineCtx.destination);
+                            source.start();
+
+                            const renderedBuffer = await offlineCtx.startRendering();
+                            const wavArrayBuffer = toWav(renderedBuffer);
+                            blob = new Blob([wavArrayBuffer], { type: 'audio/wav' });
+                            fileName = fileName.replace('.mp3', `_${speed}x.wav`);
+                          } catch (processError) {
+                            console.error("Speed processing failed, downloading original:", processError);
+                            alert("Failed to apply speed to download. Downloading original file.");
+                          }
+                        }
+
                         const url = window.URL.createObjectURL(blob);
-
-                        // Generate filename
-                        const now = new Date();
-                        const fileName = `pollyglot_${now.getTime()}.mp3`;
-
                         const a = document.createElement('a');
                         a.style.display = 'none';
                         a.href = url;
@@ -301,6 +362,8 @@ export default function Dashboard({ userPlan }) {
 
                       } catch (error) {
                         alert(`Download Error: ${error.message}`);
+                      } finally {
+                        setIsLoading(false);
                       }
                     }}
                     className="w-full mt-4 flex items-center justify-center gap-2 bg-brand-purple py-3 rounded-xl font-bold hover:bg-opacity-90 transition-colors"

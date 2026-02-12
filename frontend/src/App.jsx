@@ -10,6 +10,11 @@ import PlanSettings from './components/PlanSettings'
 import UserManagement from './components/UserManagement'
 import { authAPI } from './api/auth'
 import './index.css'
+import Home from './components/Home'
+import About from './components/About'
+
+import ComingSoon from './components/ComingSoon'
+import Plans from './components/Plans'
 
 function AdminView() {
   const [activeTab, setActiveTab] = useState('dashboard')
@@ -23,12 +28,34 @@ function AdminView() {
   )
 }
 
+function UserView({ userPlan }) {
+  const [view, setView] = useState('home');
+  const [feature, setFeature] = useState(null);
+
+  const handleNavigate = (newView, featureName = null) => {
+    setView(newView);
+    if (featureName) setFeature(featureName);
+  };
+
+  return (
+    <>
+      {view === 'home' && <Home onNavigate={handleNavigate} userPlan={userPlan} isLoggedIn={true} />}
+      {view === 'tts' && <Dashboard userPlan={userPlan} onNavigate={handleNavigate} />}
+      {view === 'about' && <About onNavigate={handleNavigate} />}
+      {view === 'coming-soon' && <ComingSoon onNavigate={handleNavigate} feature={feature} />}
+      {view === 'plans' && <Plans onNavigate={handleNavigate} />}
+    </>
+  )
+}
+
 export default function App() {
   const [page, setPage] = useState(() => {
     const path = window.location.pathname;
     if (path === '/reset-password') return 'reset-password';
     if (path === '/register') return 'register';
     if (path === '/forgot-password') return 'forgot-password';
+    // If path is root '/', show landing page (Home)
+    if (path === '/') return 'landing';
     return 'login';
   })
   const [successMessage, setSuccessMessage] = useState('')
@@ -51,7 +78,12 @@ export default function App() {
     if (userEmail && userEmail.toLowerCase() === 'admin@gmail.com') {
       return <AdminView />
     }
-    return <Dashboard userPlan={userPlan} />
+    // If authenticated user is on root path or specific user paths, show UserView
+    // However, we want Home to be public.
+    // Let's adjust the logic:
+    // If authenticated, we render UserView (which includes Home).
+    // If NOT authenticated, we want to render Home as the default landing page instead of Login.
+    return <UserView userPlan={userPlan} />
   }
 
   return (
@@ -68,7 +100,24 @@ export default function App() {
         </div>
       )}
 
-      {page === 'login' ? (
+      {/* Public Home Page as Default Landing */}
+      {page === 'landing' ? (
+        <Home
+          onNavigate={(view) => {
+            if (view === 'login') setPage('login');
+            else if (view === 'register') setPage('register');
+            else if (view === 'about') setPage('about');
+            else if (view === 'plans') setPage('plans');
+            else setPage('login'); // Default redirect to login for protected routes
+          }}
+          userPlan={null}
+          isLoggedIn={false}
+        />
+      ) : page === 'about' ? (
+        <About onNavigate={(view) => view === 'home' ? setPage('landing') : setPage('login')} />
+      ) : page === 'plans' ? (
+        <Plans onNavigate={(view) => view === 'home' ? setPage('landing') : setPage('login')} />
+      ) : page === 'login' ? (
         <Login
           onSuccess={(msg) => {
             setSuccessMessage(msg)
