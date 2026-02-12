@@ -28,6 +28,17 @@ def run_auto_migrations():
             else:
                 logger.info("Schema Check: 'is_admin' column already exists.")
 
+            # Check for 'created_at' column
+            if "created_at" not in columns:
+                logger.info("Migration: Adding 'created_at' column to 'users' table...")
+                with engine.connect() as conn:
+                    # Add DATETIME column with default current timestamp
+                    conn.execute(text("ALTER TABLE users ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
+                    conn.commit()
+                logger.info("Migration: 'created_at' column added successfully.")
+            else:
+                logger.info("Schema Check: 'created_at' column already exists.")
+
             # Check if 'transactions' table exists
             if not inspector.has_table("transactions"):
                 logger.warning("Migration Warning: 'transactions' table missing! Base.metadata.create_all() should have created it.")
