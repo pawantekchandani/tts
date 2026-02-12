@@ -10,6 +10,8 @@ class User(Base):
     email = Column(String(255), unique=True, index=True)
     hashed_password = Column(String(255))
     is_admin = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
     
     conversions = relationship("Conversion", back_populates="user")
 

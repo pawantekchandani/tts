@@ -218,7 +218,8 @@ def get_current_user_profile(db: Session = Depends(get_db), current_user: User =
         id=current_user.id,
         email=current_user.email,
         is_admin=current_user.is_admin,
-        plan_type=plan_type
+        plan_type=plan_type,
+        member_since=current_user.created_at.isoformat() if current_user.created_at else None
     )
 
 @app.post("/api/forgot-password")
