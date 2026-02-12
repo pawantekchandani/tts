@@ -34,6 +34,7 @@ class UserOut(BaseModel):
 
 class UserProfile(UserOut):
     plan_type: str
+    member_since: Optional[str] = None
 
 class Token(BaseModel):
     access_token: str
