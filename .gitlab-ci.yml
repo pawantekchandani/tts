@@ -1,3 +1,19 @@
+stages:
+  - build
+  - deploy
+
+build_frontend:
+  stage: build
+  image: node:18
+  script:
+    - cd frontend
+    - npm install
+    - npm run build
+  artifacts:
+    paths:
+      - frontend/dist/
+    expire_in: 1 week
+
 deploy_to_milesweb:
   stage: deploy
   image: alpine:latest
@@ -6,13 +22,8 @@ deploy_to_milesweb:
     - lftp -e "set ftp:ssl-allow no; open $FTP_SERVER; user $FTP_USERNAME $FTP_PASSWORD; 
       mirror -R frontend/dist/ tts.testingprojects.online/;
       mirror -R backend/ tts_app/backend/; 
-      
-      # YE LINE ADD KI HAI: Root ki requirements.txt ko tts_app/ mein bhejne ke liye
       put requirements.txt -o tts_app/requirements.txt; 
-      
-      # Agar passenger_wsgi.py bhi update karni ho to:
       put passenger_wsgi.py -o tts_app/passenger_wsgi.py;
-
       mkdir -p tts_app/backend/tmp;
       put -E /dev/null -o tts_app/backend/tmp/restart.txt;
       quit"
