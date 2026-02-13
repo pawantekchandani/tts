@@ -11,7 +11,7 @@ class User(Base):
     hashed_password = Column(String(255))
     is_admin = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    
+    credits_used = Column(Integer, default=0)
     
     conversions = relationship("Conversion", back_populates="user")
 
@@ -57,9 +57,7 @@ class PlanLimits(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     plan_name = Column(String(50), unique=True, index=True)
-    chats_per_day = Column(Integer)
-    context_limit = Column(Integer)
-    download_limit = Column(Integer)
+    credit_limit = Column(Integer)
     history_days = Column(Integer)
 
 

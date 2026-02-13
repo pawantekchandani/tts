@@ -16,6 +16,11 @@ axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
+      // Ignore 401s from login endpoint (they are just wrong credentials)
+      if (error.config.url.includes('/login')) {
+        return Promise.reject(error);
+      }
+
       // Token expired or invalid -> Logout user
       localStorage.removeItem('access_token');
       localStorage.removeItem('user_email');

@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react'
+import { Toaster } from 'react-hot-toast'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import Login from './components/Login'
 import Register from './components/Register'
 import Dashboard from './components/Dashboard'
@@ -12,10 +14,10 @@ import { authAPI } from './api/auth'
 import './index.css'
 import Home from './components/Home'
 import About from './components/About'
-
 import ComingSoon from './components/ComingSoon'
 import Plans from './components/Plans'
 
+// Admin View Component
 function AdminView() {
   const [activeTab, setActiveTab] = useState('dashboard')
 
@@ -28,40 +30,31 @@ function AdminView() {
   )
 }
 
-function UserView({ userPlan }) {
-  const [view, setView] = useState('home');
-  const [feature, setFeature] = useState(null);
+// Protected Route Component
+const ProtectedRoute = ({ children, adminOnly = false }) => {
+  const isAuthenticated = authAPI.isAuthenticated();
+  const userEmail = authAPI.getUserEmail();
+  const isAdmin = userEmail && userEmail.toLowerCase() === 'admin@gmail.com';
 
-  const handleNavigate = (newView, featureName = null) => {
-    setView(newView);
-    if (featureName) setFeature(featureName);
-  };
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
 
-  return (
-    <>
-      {view === 'home' && <Home onNavigate={handleNavigate} userPlan={userPlan} isLoggedIn={true} />}
-      {view === 'tts' && <Dashboard userPlan={userPlan} onNavigate={handleNavigate} />}
-      {view === 'about' && <About onNavigate={handleNavigate} />}
-      {view === 'coming-soon' && <ComingSoon onNavigate={handleNavigate} feature={feature} />}
-      {view === 'plans' && <Plans onNavigate={handleNavigate} />}
-    </>
-  )
-}
+  if (adminOnly && !isAdmin) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
-export default function App() {
-  const [page, setPage] = useState(() => {
-    const path = window.location.pathname;
-    if (path === '/reset-password') return 'reset-password';
-    if (path === '/register') return 'register';
-    if (path === '/forgot-password') return 'forgot-password';
-    // If path is root '/', show landing page (Home)
-    if (path === '/') return 'landing';
-    return 'login';
-  })
-  const [successMessage, setSuccessMessage] = useState('')
+  return children;
+};
+
+// Main App Routes
+function AppContent() {
   const [userPlan, setUserPlan] = useState(authAPI.getUserPlan())
   const isAuthenticated = authAPI.isAuthenticated()
-  const userEmail = authAPI.getUserEmail()
+  const userEmail = authAPI.getUserEmail();
+  const isAdmin = userEmail && userEmail.toLowerCase() === 'admin@gmail.com';
+  const navigate = useNavigate();
+  const location = useLocation();
 
   // Sync plan with backend on mounting
   useEffect(() => {
@@ -74,77 +67,149 @@ export default function App() {
     }
   }, [isAuthenticated]);
 
-  if (isAuthenticated) {
-    if (userEmail && userEmail.toLowerCase() === 'admin@gmail.com') {
-      return <AdminView />
+  const handleNavigate = (view) => {
+    switch (view) {
+      case 'home':
+      case 'landing':
+        navigate('/');
+        break;
+      case 'login':
+        navigate('/login');
+        break;
+      case 'register':
+        navigate('/register');
+        break;
+      case 'dashboard':
+      case 'tts':
+        navigate('/tts');
+        break;
+      case 'stt':
+        navigate('/stt');
+        break;
+      case 'cloning':
+        navigate('/voice-cloning');
+        break;
+      case 'image':
+        navigate('/ai-image-gen');
+        break;
+      case 'about':
+        navigate('/about');
+        break;
+      case 'plans':
+        navigate('/plans');
+        break;
+      case 'forgot-password':
+        navigate('/forgot-password');
+        break;
+      case 'reset-password':
+        navigate('/reset-password');
+        break;
+      default:
+        navigate('/');
     }
-    // If authenticated user is on root path or specific user paths, show UserView
-    // However, we want Home to be public.
-    // Let's adjust the logic:
-    // If authenticated, we render UserView (which includes Home).
-    // If NOT authenticated, we want to render Home as the default landing page instead of Login.
-    return <UserView userPlan={userPlan} />
-  }
+  };
+
+  const handleLoginSuccess = () => {
+    // No reload needed, rely on state update or explicit navigation from Login component
+  };
+
+  // Redirect Admin to /admin if they hit root or generic paths meant for users, 
+  // but allow explicit navigation.
+  // Original app forced AdminView for all authorized requests. 
+  // We'll trust the routes, but we can default / to /admin for admins if we want.
+  // For now, mapping / to Home.
 
   return (
-    <div>
-      {successMessage && (
-        <div className="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50">
-          {successMessage}
-          <button
-            onClick={() => setSuccessMessage('')}
-            className="ml-4 font-bold"
-          >
-            ×
-          </button>
-        </div>
-      )}
+    <>
+      <Toaster position="top-right" />
+      <Routes>
+        <Route path="/" element={
+          <Home
+            onNavigate={handleNavigate}
+            userPlan={isAuthenticated ? userPlan : null}
+            isLoggedIn={isAuthenticated}
+          />
+        } />
 
-      {/* Public Home Page as Default Landing */}
-      {page === 'landing' ? (
-        <Home
-          onNavigate={(view) => {
-            if (view === 'login') setPage('login');
-            else if (view === 'register') setPage('register');
-            else if (view === 'about') setPage('about');
-            else if (view === 'plans') setPage('plans');
-            else setPage('login'); // Default redirect to login for protected routes
-          }}
-          userPlan={null}
-          isLoggedIn={false}
-        />
-      ) : page === 'about' ? (
-        <About onNavigate={(view) => view === 'home' ? setPage('landing') : setPage('login')} />
-      ) : page === 'plans' ? (
-        <Plans onNavigate={(view) => view === 'home' ? setPage('landing') : setPage('login')} />
-      ) : page === 'login' ? (
-        <Login
-          onSuccess={(msg) => {
-            setSuccessMessage(msg)
-            // Reload to update authentication state
-            setTimeout(() => window.location.reload(), 1000)
-          }}
-          onSwitchToRegister={() => setPage('register')}
-          onSwitchToForgotPassword={() => setPage('forgot-password')}
-        />
-      ) : page === 'register' ? (
-        <Register
-          onSuccess={(msg) => {
-            setSuccessMessage(msg)
-            setTimeout(() => setPage('login'), 2000)
-          }}
-          onSwitchToLogin={() => setPage('login')}
-        />
-      ) : page === 'forgot-password' ? (
-        <ForgotPassword
-          onBackToLogin={() => setPage('login')}
-          onSwitchToResetPassword={() => setPage('reset-password')}
-        />
-      ) : page === 'reset-password' ? (
-        <ResetPassword
-          onBackToLogin={() => setPage('login')}
-        />
-      ) : null}
-    </div>
+        <Route path="/login" element={
+          isAuthenticated ? <Navigate to={isAdmin ? "/admin" : "/"} replace /> :
+            <Login
+              onSuccess={handleLoginSuccess}
+              onSwitchToRegister={() => navigate('/register')}
+              onSwitchToForgotPassword={() => navigate('/forgot-password')}
+            />
+        } />
+
+        <Route path="/register" element={
+          isAuthenticated ? <Navigate to={isAdmin ? "/admin" : "/"} replace /> :
+            <Register
+              onSuccess={() => { setTimeout(() => navigate('/login'), 2000) }}
+              onSwitchToLogin={() => navigate('/login')}
+            />
+        } />
+
+        <Route path="/forgot-password" element={
+          <ForgotPassword
+            onBackToLogin={() => navigate('/login')}
+            onSwitchToResetPassword={() => navigate('/reset-password')}
+          />
+        } />
+
+        <Route path="/reset-password" element={
+          <ResetPassword
+            onBackToLogin={() => navigate('/login')}
+          />
+        } />
+
+        <Route path="/dashboard" element={
+          <Navigate to="/tts" replace />
+        } />
+
+        <Route path="/tts" element={
+          <ProtectedRoute>
+            <Dashboard userPlan={userPlan} onNavigate={handleNavigate} />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/stt" element={
+          <ProtectedRoute>
+            <ComingSoon onNavigate={handleNavigate} feature="Speech to Text" />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/voice-cloning" element={
+          <ProtectedRoute>
+            <ComingSoon onNavigate={handleNavigate} feature="Voice Cloning" />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/ai-image-gen" element={
+          <ProtectedRoute>
+            <ComingSoon onNavigate={handleNavigate} feature="AI Image Generation" />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/admin" element={
+          <ProtectedRoute adminOnly={true}>
+            <AdminView />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/about" element={<About onNavigate={handleNavigate} />} />
+        <Route path="/plans" element={<Plans onNavigate={handleNavigate} />} />
+        <Route path="/coming-soon" element={<ComingSoon onNavigate={handleNavigate} />} />
+
+        {/* Fallback */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </>
+  )
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
+    </BrowserRouter>
   )
 }
