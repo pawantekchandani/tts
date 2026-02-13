@@ -34,6 +34,8 @@ class UserOut(BaseModel):
 
 class UserProfile(UserOut):
     plan_type: str
+    credits_used: int = 0
+    credit_limit: int = 0
     member_since: Optional[str] = None
 
 class Token(BaseModel):
@@ -74,9 +76,7 @@ class ResetPasswordRequest(BaseModel):
 
 
 class PlanLimitUpdate(BaseModel):
-    chats_per_day: int
-    context_limit: int
-    download_limit: int
+    credit_limit: int
     history_days: int
 
 class UserPlanUpdate(BaseModel):

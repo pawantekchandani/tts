@@ -1,36 +1,37 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { authAPI } from '../api/auth'
+import toast from 'react-hot-toast'
 
 export default function Register({ onSuccess, onSwitchToLogin }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const navigate = useNavigate()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setError('')
 
     if (!email || !password || !confirmPassword) {
-      setError('All fields are required')
+      toast.error('All fields are required')
       return
     }
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match')
+      toast.error('Passwords do not match')
       return
     }
 
     if (password.length < 6) {
-      setError('Password must be at least 6 characters')
+      toast.error('Password must be at least 6 characters')
       return
     }
 
     // Check byte length (bcrypt has 72-byte limit)
     const passwordBytes = new TextEncoder().encode(password).length
     if (passwordBytes > 72) {
-      setError('Password cannot be longer than 72 bytes')
+      toast.error('Password cannot be longer than 72 bytes')
       return
     }
 
@@ -40,10 +41,11 @@ export default function Register({ onSuccess, onSwitchToLogin }) {
       setEmail('')
       setPassword('')
       setConfirmPassword('')
-      setError('')
-      onSuccess('Registration successful! Please login.')
+      toast.success('Registration successful! Please login.')
+      onSuccess()
+      navigate('/login')
     } catch (err) {
-      setError(err.detail || 'Registration failed')
+      toast.error(err.detail || 'Registration failed')
     } finally {
       setLoading(false)
     }
@@ -53,12 +55,6 @@ export default function Register({ onSuccess, onSwitchToLogin }) {
     <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
       <div className="bg-gray-900 rounded-lg shadow-2xl p-8 w-full max-w-md border border-gray-800">
         <h2 className="text-3xl font-bold text-center text-orange-500 mb-8">Register</h2>
-
-        {error && (
-          <div className="bg-red-900/50 border border-red-500 text-red-200 px-4 py-3 rounded mb-4">
-            {error}
-          </div>
-        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

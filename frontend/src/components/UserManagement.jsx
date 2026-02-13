@@ -83,7 +83,7 @@ const UserManagement = () => {
                         <tr>
                             <th className="px-4 py-3 rounded-l-lg">Email</th>
                             <th className="px-4 py-3">Current Plan</th>
-                            <th className="px-4 py-3">Usage (Today)</th>
+                            <th className="px-4 py-3">Usage (Credits)</th>
                             <th className="px-4 py-3 rounded-r-lg">Plan Action</th>
                         </tr>
                     </thead>
@@ -108,11 +108,8 @@ const UserManagement = () => {
                                 </td>
                                 <td className="px-4 py-3 text-sm text-gray-300">
                                     <div className="flex flex-col gap-1">
-                                        <span title="Chats">
-                                            💬 {user.usage.chats_today} / {user.usage.chats_limit}
-                                        </span>
-                                        <span title="Downloads">
-                                            📥 {user.usage.downloads_today || 0} / {user.usage.download_limit || 0}
+                                        <span title="Credits">
+                                            🪙 {user.usage.credits_used} / {user.usage.credit_limit}
                                         </span>
                                     </div>
                                 </td>
