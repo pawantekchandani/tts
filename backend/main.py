@@ -25,9 +25,12 @@ from typing import Optional
 from sqlalchemy import func
 from fastapi.security import OAuth2PasswordBearer
 from auth import verify_token
+import io
+import traceback
+from pydub import AudioSegment
 # --- AUTO MIGRATION ---
 from auto_migrate import run_auto_migrations
-from utils import check_user_limits
+from utils import check_user_limits, smart_split
 from dependencies import get_current_user
 import admin_routes
 
@@ -214,8 +217,10 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
 @app.post("/api/login", response_model=Token)
 def login(user: UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.email == user.email).first()
-    if not db_user or not verify_password(user.password, db_user.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+    if not db_user:
+        raise HTTPException(status_code=400, detail="Email is not registered")
+    if not verify_password(user.password, db_user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid password")
     
     access_token = create_access_token(data={"sub": str(db_user.id)})
     
@@ -231,11 +236,20 @@ def get_current_user_profile(db: Session = Depends(get_db), current_user: User =
     latest_tx = db.query(Transaction).filter(Transaction.user_id == current_user.id).order_by(Transaction.timestamp.desc()).first()
     plan_type = latest_tx.plan_type if latest_tx else "Basic"
     
+    # Get plan limits
+    plan_limits = db.query(PlanLimits).filter(PlanLimits.plan_name == plan_type).first()
+    if not plan_limits:
+        plan_limits = db.query(PlanLimits).filter(PlanLimits.plan_name == "Basic").first()
+    
+    credit_limit = plan_limits.credit_limit if plan_limits else 0
+
     return UserProfile(
         id=current_user.id,
         email=current_user.email,
         is_admin=current_user.is_admin,
         plan_type=plan_type,
+        credits_used=current_user.credits_used or 0,
+        credit_limit=credit_limit,
         member_since=current_user.created_at.isoformat() if current_user.created_at else None
     )
 
@@ -347,9 +361,7 @@ def update_plan(plan_name: str, plan_update: PlanLimitUpdate, db: Session = Depe
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
         
-    plan.chats_per_day = plan_update.chats_per_day
-    plan.context_limit = plan_update.context_limit
-    plan.download_limit = plan_update.download_limit
+    plan.credit_limit = plan_update.credit_limit
     plan.history_days = plan_update.history_days
     
     db.commit()
@@ -370,29 +382,68 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
          raise HTTPException(status_code=500, detail="AWS Polly unavailable")
 
     # Check Plan Limits
-    limit_check = check_user_limits(current_user.id, db, len(conversion.text))
+    chars = len(conversion.text)
+    limit_check = check_user_limits(current_user.id, db, chars)
     if not limit_check['allowed']:
         raise HTTPException(status_code=403, detail=limit_check['reason'])
 
     try:
-        response = polly_client.synthesize_speech(
-            Text=conversion.text,
-            OutputFormat='mp3',
-            VoiceId=conversion.voice_id or 'Joanna',
-            Engine=conversion.engine
-        )
-        
-        now = datetime.now()
-        month_year = now.strftime("%B-%Y")
-        user_folder = str(current_user.id)
-        audio_base_path = static_path / "audio" / month_year / user_folder
-        audio_base_path.mkdir(parents=True, exist_ok=True)
-        
-        filename = now.strftime("%b-%d_%H-%M-%S") + ".mp3"
-        file_path = audio_base_path / filename
-        
-        with open(file_path, 'wb') as f:
-            f.write(response['AudioStream'].read())
+        # --- NEW LOGIC: SMART SPLIT & MERGE ---
+        if len(conversion.text) > 3000:
+            chunks = smart_split(conversion.text)
+            logger.info(f"Text too long, split into {len(chunks)} chunks.")
+            
+            combined_audio = AudioSegment.empty()
+            
+            for i, chunk in enumerate(chunks):
+                if not chunk.strip():
+                    continue
+                    
+                response = polly_client.synthesize_speech(
+                    Text=chunk,
+                    OutputFormat='mp3',
+                    VoiceId=conversion.voice_id or 'Joanna',
+                    Engine=conversion.engine
+                )
+                
+                # Convert stream to AudioSegment
+                audio_stream = io.BytesIO(response['AudioStream'].read())
+                chunk_audio = AudioSegment.from_file(audio_stream, format="mp3")
+                combined_audio += chunk_audio
+                logger.info(f"Processed chunk {i+1}/{len(chunks)}")
+            
+            # Export merged audio
+            now = datetime.now()
+            month_year = now.strftime("%B-%Y")
+            user_folder = str(current_user.id)
+            audio_base_path = static_path / "audio" / month_year / user_folder
+            audio_base_path.mkdir(parents=True, exist_ok=True)
+            
+            filename = now.strftime("%b-%d_%H-%M-%S") + ".mp3"
+            file_path = audio_base_path / filename
+            
+            combined_audio.export(str(file_path), format="mp3")
+            
+        else:
+            # --- OLD LOGIC: SINGLE CALL ---
+            response = polly_client.synthesize_speech(
+                Text=conversion.text,
+                OutputFormat='mp3',
+                VoiceId=conversion.voice_id or 'Joanna',
+                Engine=conversion.engine
+            )
+            
+            now = datetime.now()
+            month_year = now.strftime("%B-%Y")
+            user_folder = str(current_user.id)
+            audio_base_path = static_path / "audio" / month_year / user_folder
+            audio_base_path.mkdir(parents=True, exist_ok=True)
+            
+            filename = now.strftime("%b-%d_%H-%M-%S") + ".mp3"
+            file_path = audio_base_path / filename
+            
+            with open(file_path, 'wb') as f:
+                f.write(response['AudioStream'].read())
             
         audio_url = f"/static/audio/{month_year}/{user_folder}/{filename}"
         
@@ -401,6 +452,11 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
             voice_name=conversion.voice_id, user_id=current_user.id, created_at=now
         )
         db.add(db_conversion)
+        
+        # Increment Credits
+        # We checked limit before, so this shouldn't cross unless race condition (which is acceptable for now)
+        current_user.credits_used = (current_user.credits_used or 0) + chars
+        
         db.commit()
         db.refresh(db_conversion)
         
@@ -409,8 +465,9 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
             audio_url=audio_url, created_at=db_conversion.created_at.isoformat()
         )
     except Exception as e:
-        logger.error(f"Conversion Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        error_trace = traceback.format_exc()
+        logger.error(f"Conversion Error: {e}\nTraceback:\n{error_trace}")
+        raise HTTPException(status_code=500, detail=f"Conversion failed: {str(e)}")
 
 @app.get("/api/history", response_model=list[ConversionOut])
 def get_history(
@@ -513,19 +570,8 @@ def download_conversion(conversion_id: int, db: Session = Depends(get_db), curre
     if conversion.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Forbidden: You do not own this file")
 
-    # 3. Check Download Limit
-    usage_check = check_user_limits(current_user.id, db, text_length=0) # 0 means we act like we are just checking usage
-    if not usage_check['allowed']:
-        # This only happens if plan is missing/error
-         raise HTTPException(status_code=500, detail=usage_check['reason'])
-
-    current_plan = usage_check.get('plan')
-    daily_downloads = usage_check.get('daily_download_count', 0)
-    
-    if current_plan and daily_downloads >= current_plan.download_limit:
-        raise HTTPException(status_code=403, detail=f"Daily download limit reached ({current_plan.download_limit}). Upgrade to download more.")
-
-    # 4. Record Download (If allowed)
+    # 3. Record Download
+    # Note: Download limits have been removed, but we still log history.
     try:
         new_download = DownloadHistory(
             user_id=current_user.id,
@@ -536,13 +582,8 @@ def download_conversion(conversion_id: int, db: Session = Depends(get_db), curre
         db.commit()
     except Exception as e:
         logger.error(f"Failed to log download history: {e}")
-        # We proceed even if logging fails? Or block? Better to fail safe.
-        # But for user experience, maybe just log error.
     
-    # 5. Serve File
-    # Extract file path from URL logic (since we stored full URL previously)
-    # URL format: /static/audio/Month-Year/UserId/Filename.mp3
-    # We need just the relative path: Month-Year/UserId/Filename.mp3
+    # 4. Serve File
     try:
         relative_path = conversion.audio_url.replace("/static/audio/", "")
         full_path = static_path / "audio" / relative_path
@@ -603,4 +644,4 @@ else:
             "<h1>Frontend Files Not Found</h1>"
             "<p>Please check if <b>FRONTEND_PATH</b> is set correctly in your <b>.env</b> file.</p>", 
             status_code=404
-        )
+        )# Update

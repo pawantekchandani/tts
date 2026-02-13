@@ -39,6 +39,16 @@ def run_auto_migrations():
             else:
                 logger.info("Schema Check: 'created_at' column already exists.")
 
+            # Check for 'credits_used' column
+            if "credits_used" not in columns:
+                logger.info("Migration: Adding 'credits_used' column to 'users' table...")
+                with engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN credits_used INTEGER DEFAULT 0"))
+                    conn.commit()
+                logger.info("Migration: 'credits_used' column added successfully.")
+            else:
+                logger.info("Schema Check: 'credits_used' column already exists.")
+
             # Check if 'transactions' table exists
             if not inspector.has_table("transactions"):
                 logger.warning("Migration Warning: 'transactions' table missing! Base.metadata.create_all() should have created it.")

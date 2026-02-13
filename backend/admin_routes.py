@@ -36,44 +36,12 @@ def get_user_details(db: Session = Depends(get_db), current_user: User = Depends
         plan_limits = db.query(PlanLimits).filter(PlanLimits.plan_name == plan_type).first()
         if not plan_limits:
             # Fallback
-            plan_limits = db.query(PlanLimits).filter(PlanLimits.plan_name == "basic").first()
+            plan_limits = db.query(PlanLimits).filter(PlanLimits.plan_name == "Basic").first()
             
-        chats_limit = plan_limits.chats_per_day if plan_limits else 0
-        context_limit = plan_limits.context_limit if plan_limits else 0
-        download_limit = plan_limits.download_limit if plan_limits else 0
+        credit_limit = plan_limits.credit_limit if plan_limits else 0
         
         # 4. Usage Stats
-        # Total chats today
-        chats_today = db.query(Conversion).filter(
-            Conversion.user_id == user.id,
-            func.date(Conversion.created_at) == today
-        ).count()
-        
-        # Total downloads today
-        downloads_today = db.query(DownloadHistory).filter(
-            DownloadHistory.user_id == user.id,
-            func.date(DownloadHistory.timestamp) == today
-        ).count()
-        
-        # Total usage (characters) today. 
-        # Note: The prompt asks for "total words", but context_limit is in chars. 
-        # We sum the length of the text.
-        try:
-             # func.length returns bytes in some DBs, char_length in others. 
-             # For standard SQL or sqlite, length matches chars usually. 
-             # For MySQL with utf8mb4, char_length is safer for character count.
-            words_today_result = db.query(func.sum(func.char_length(Conversion.text))).filter(
-                Conversion.user_id == user.id,
-                func.date(Conversion.created_at) == today
-            ).scalar()
-        except Exception:
-             # Fallback if char_length not supported (e.g. sqlite uses length)
-            words_today_result = db.query(func.sum(func.length(Conversion.text))).filter(
-                Conversion.user_id == user.id,
-                func.date(Conversion.created_at) == today
-            ).scalar()
-            
-        words_today = int(words_today_result) if words_today_result else 0
+        # We now track usage via user.credits_used
         
         details.append({
             "user_id": user.id,
@@ -81,12 +49,8 @@ def get_user_details(db: Session = Depends(get_db), current_user: User = Depends
             "current_plan": plan_type,
             "is_default_plan": is_default_plan,
             "usage": {
-                "chats_today": chats_today,
-                "chats_limit": chats_limit,
-                "words_today": words_today,
-                "context_limit": context_limit,
-                "downloads_today": downloads_today,
-                "download_limit": download_limit
+                "credits_used": user.credits_used,
+                "credit_limit": credit_limit
             }
         })
         

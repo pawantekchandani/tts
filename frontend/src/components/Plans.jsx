@@ -27,9 +27,9 @@ const Plans = ({ onNavigate }) => {
                 // BACKUP STRATEGY: Hardcoded defaults if API fails or isn't built yet
                 // Ideally this data comes from the DB table 'plan_limits'
                 const defaultLimits = {
-                    'Basic': { chats_per_day: 10, context_limit: 1000, download_limit: 5, history_days: 7 },
-                    'Pro': { chats_per_day: 50, context_limit: 5000, download_limit: 20, history_days: 30 },
-                    'Plus': { chats_per_day: 9999, context_limit: 20000, download_limit: 100, history_days: 90 }
+                    'Basic': { credit_limit: 3000, history_days: 7 },
+                    'Pro': { credit_limit: 10000, history_days: 30 },
+                    'Plus': { credit_limit: 30000, history_days: 9999 }
                 };
 
                 if (response.data && Array.isArray(response.data)) {
@@ -45,9 +45,9 @@ const Plans = ({ onNavigate }) => {
             } catch (err) {
                 console.warn("Could not fetch plan limits, using defaults.", err);
                 setLimits({
-                    'Basic': { chats_per_day: 10, context_limit: 1000, download_limit: 5, history_days: 7 },
-                    'Pro': { chats_per_day: 50, context_limit: 5000, download_limit: 20, history_days: 30 },
-                    'Plus': { chats_per_day: 100, context_limit: 20000, download_limit: 50, history_days: 90 }
+                    'Basic': { credit_limit: 3000, history_days: 7 },
+                    'Pro': { credit_limit: 10000, history_days: 30 },
+                    'Plus': { credit_limit: 30000, history_days: 9999 }
                 });
             } finally {
                 setLoading(false);
@@ -167,15 +167,7 @@ const Plans = ({ onNavigate }) => {
                         <ul className="space-y-4 flex-1 mb-8">
                             <li className="flex items-center gap-3 text-gray-300">
                                 <Check className="w-5 h-5 text-green-400 flex-shrink-0" />
-                                <span><strong className="text-white">{plan.features.chats_per_day || '-'}</strong> chats per day</span>
-                            </li>
-                            <li className="flex items-center gap-3 text-gray-300">
-                                <Check className="w-5 h-5 text-green-400 flex-shrink-0" />
-                                <span><strong className="text-white">{plan.features.context_limit || '-'}</strong> chars context</span>
-                            </li>
-                            <li className="flex items-center gap-3 text-gray-300">
-                                <Check className="w-5 h-5 text-green-400 flex-shrink-0" />
-                                <span><strong className="text-white">{plan.features.download_limit || '-'}</strong> download limit</span>
+                                <span><strong className="text-white">{plan.features.credit_limit || '-'}</strong> credits</span>
                             </li>
                             <li className="flex items-center gap-3 text-gray-300">
                                 <Check className="w-5 h-5 text-green-400 flex-shrink-0" />
@@ -191,10 +183,10 @@ const Plans = ({ onNavigate }) => {
                             {plan.name === 'Basic' ? 'Current Plan' : 'Upgrade Now'}
                         </button>
 
-                    </motion.div>
+                    </motion.div >
                 ))}
-            </motion.div>
-        </div>
+            </motion.div >
+        </div >
     );
 };
 

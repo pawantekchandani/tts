@@ -1,18 +1,19 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { authAPI } from '../api/auth'
+import toast from 'react-hot-toast'
 
 export default function Login({ onSuccess, onSwitchToRegister, onSwitchToForgotPassword }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const navigate = useNavigate()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setError('')
 
     if (!email || !password) {
-      setError('Email and password are required')
+      toast.error('Email and password are required')
       return
     }
 
@@ -21,9 +22,21 @@ export default function Login({ onSuccess, onSwitchToRegister, onSwitchToForgotP
       await authAPI.login(email, password)
       setEmail('')
       setPassword('')
-      onSuccess('Login successful!')
+      toast.success('Login successful!')
+      onSuccess()
+
+      const userEmail = authAPI.getUserEmail();
+      if (userEmail && userEmail.toLowerCase() === 'admin@gmail.com') {
+        navigate('/admin');
+      } else {
+        navigate('/');
+      }
     } catch (err) {
-      setError(err.detail || 'Login failed')
+      if (err.detail === 'Email is not registered') {
+        toast.error('Email is not registered. Please register first.')
+      } else {
+        toast.error(err.detail || 'Login failed')
+      }
     } finally {
       setLoading(false)
     }
@@ -33,12 +46,6 @@ export default function Login({ onSuccess, onSwitchToRegister, onSwitchToForgotP
     <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
       <div className="bg-gray-900 rounded-lg shadow-2xl p-8 w-full max-w-md border border-gray-800">
         <h2 className="text-3xl font-bold text-center text-green-500 mb-8">Start Login</h2>
-
-        {error && (
-          <div className="bg-red-900/50 border border-red-500 text-red-200 px-4 py-3 rounded mb-4">
-            {error}
-          </div>
-        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

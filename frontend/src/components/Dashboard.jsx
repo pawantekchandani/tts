@@ -25,11 +25,26 @@ export default function Dashboard({ userPlan, onNavigate }) {
   const [selectedItem, setSelectedItem] = useState(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [speed, setSpeed] = useState(1.0);
+  const [creditsUsed, setCreditsUsed] = useState(0);
+  const [creditLimit, setCreditLimit] = useState(0);
   const audioRef = useRef(null);
 
   useEffect(() => {
     fetchHistory(true);
+    fetchUserInfo();
   }, []);
+
+  const fetchUserInfo = async () => {
+    try {
+      const profile = await authAPI.getProfile();
+      if (profile) {
+        setCreditsUsed(profile.credits_used || 0);
+        setCreditLimit(profile.credit_limit || 0);
+      }
+    } catch (err) {
+      console.error("Failed to fetch user info:", err);
+    }
+  };
 
   useEffect(() => {
     setVoice(engine === 'neural' ? 'Kajal' : 'Aditi');
@@ -142,6 +157,7 @@ export default function Dashboard({ userPlan, onNavigate }) {
 
       try {
         await fetchHistory(true);
+        await fetchUserInfo(); // Refresh credits
       } catch (historyError) {
         console.warn("Conversion successful, but failed to refresh history:", historyError);
       }
@@ -154,7 +170,6 @@ export default function Dashboard({ userPlan, onNavigate }) {
       setIsLoading(false);
     }
   };
-
   const handleLogout = () => {
     authAPI.logout();
     window.location.reload();
@@ -218,12 +233,17 @@ export default function Dashboard({ userPlan, onNavigate }) {
                   onEngineChange={setEngine}
                 />
 
-                <textarea
-                  value={text}
-                  onChange={e => setText(e.target.value)}
-                  placeholder="Enter text to convert into speech..."
-                  className="w-full h-32 sm:h-40 bg-black border border-white/10 rounded-xl p-3 sm:p-4 text-base sm:text-lg resize-none focus:ring-2 focus:ring-brand-purple"
-                />
+                <div>
+                  <textarea
+                    value={text}
+                    onChange={e => setText(e.target.value)}
+                    placeholder="Enter text to convert into speech..."
+                    className="w-full h-32 sm:h-40 bg-black border border-white/10 rounded-xl p-3 sm:p-4 text-base sm:text-lg resize-none focus:ring-2 focus:ring-brand-purple"
+                  />
+                  <div className="text-xs text-gray-400 mt-1 text-right">
+                    Credits Used: {creditsUsed} / {creditLimit}
+                  </div>
+                </div>
 
                 <button
                   onClick={handleConvert}
@@ -246,15 +266,15 @@ export default function Dashboard({ userPlan, onNavigate }) {
                     </>
                   )}
                 </button>
-              </div>
-            </div>
-          </motion.div>
+              </div >
+            </div >
+          </motion.div >
 
           {/* OUTPUT + HISTORY */}
-          <div className="space-y-6">
+          < div className="space-y-6" >
 
             {/* AUDIO */}
-            <AnimatePresence>
+            < AnimatePresence >
               {audioUrl && (
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
@@ -372,86 +392,89 @@ export default function Dashboard({ userPlan, onNavigate }) {
                     Download MP3
                   </button>
                 </motion.div>
-              )}
-            </AnimatePresence>
+              )
+              }
+            </AnimatePresence >
 
             {/* HISTORY */}
-            <div className="bg-[#1e293b]/40 border border-white/5 rounded-2xl p-4 sm:p-6">
+            < div className="bg-[#1e293b]/40 border border-white/5 rounded-2xl p-4 sm:p-6" >
               <h3 className="text-lg font-semibold mb-3">Recent Conversions</h3>
 
-              {history.length === 0 && !loadingHistory ? (
-                <p className="text-gray-500 text-sm text-center py-6">
-                  No history yet
-                </p>
-              ) : (
-                <div
-                  className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar"
-                  onScroll={(e) => {
-                    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-                    if (scrollHeight - scrollTop <= clientHeight + 50 && hasMore && !loadingHistory) {
-                      fetchHistory(false);
-                    }
-                  }}
-                >
-                  {history.slice(0, 5).map(item => (
-                    <div
-                      key={item.id}
-                      className="flex items-center gap-3 p-3 rounded-xl bg-white/5"
-                    >
-                      <div className="w-8 h-8 rounded-full bg-brand-blue/20 flex flex-shrink-0 items-center justify-center text-xs">
-                        MP3
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm truncate">{item.text}</p>
-                        <p className="text-xs text-gray-400">
-                          {item.voice} • {item.created_at}
-                        </p>
-                      </div>
-                      <button
-                        onClick={async () => {
-                          const secureUrl = await fetchSecureAudio(item.audio_url);
-                          if (secureUrl) {
-                            setAudioUrl(secureUrl);
-                            setCurrentConversionId(item.id);
-                          }
-                        }}
-                        className="p-2 rounded-lg bg-brand-blue/20 hover:bg-brand-blue/40 transition-colors"
-                        title="Play"
+              {
+                history.length === 0 && !loadingHistory ? (
+                  <p className="text-gray-500 text-sm text-center py-6">
+                    No history yet
+                  </p>
+                ) : (
+                  <div
+                    className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar"
+                    onScroll={(e) => {
+                      const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+                      if (scrollHeight - scrollTop <= clientHeight + 50 && hasMore && !loadingHistory) {
+                        fetchHistory(false);
+                      }
+                    }}
+                  >
+                    {history.slice(0, 5).map(item => (
+                      <div
+                        key={item.id}
+                        className="flex items-center gap-3 p-3 rounded-xl bg-white/5"
                       >
-                        <Play className="w-4 h-4" />
-                      </button>
+                        <div className="w-8 h-8 rounded-full bg-brand-blue/20 flex flex-shrink-0 items-center justify-center text-xs">
+                          MP3
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm truncate">{item.text}</p>
+                          <p className="text-xs text-gray-400">
+                            {item.voice} • {item.created_at}
+                          </p>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            const secureUrl = await fetchSecureAudio(item.audio_url);
+                            if (secureUrl) {
+                              setAudioUrl(secureUrl);
+                              setCurrentConversionId(item.id);
+                            }
+                          }}
+                          className="p-2 rounded-lg bg-brand-blue/20 hover:bg-brand-blue/40 transition-colors"
+                          title="Play"
+                        >
+                          <Play className="w-4 h-4" />
+                        </button>
 
+                        <button
+                          onClick={() => setSelectedItem(item)}
+                          className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+                          title="View Details"
+                        >
+                          <Maximize2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+
+                    {loadingHistory && (
+                      <div className="py-4 flex justify-center">
+                        <Loader className="animate-spin w-5 h-5 text-brand-purple" />
+                      </div>
+                    )}
+
+                    {!loadingHistory && history.length > 0 && (
                       <button
-                        onClick={() => setSelectedItem(item)}
-                        className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
-                        title="View Details"
+                        onClick={() => setShowHistoryModal(true)}
+                        className="w-full mt-4 py-2 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors flex items-center justify-center gap-2"
                       >
-                        <Maximize2 className="w-4 h-4" />
+                        View All History
+                        <ChevronRight className="w-4 h-4" />
                       </button>
-                    </div>
-                  ))}
+                    )}
+                  </div>
+                )
+              }
+            </div >
 
-                  {loadingHistory && (
-                    <div className="py-4 flex justify-center">
-                      <Loader className="animate-spin w-5 h-5 text-brand-purple" />
-                    </div>
-                  )}
-
-                  {!loadingHistory && history.length > 0 && (
-                    <button
-                      onClick={() => setShowHistoryModal(true)}
-                      className="w-full mt-4 py-2 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors flex items-center justify-center gap-2"
-                    >
-                      View All History
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-
-          </div>
-        </div>
+          </div >
+        </div >
       </main >
 
       {/* HISTORY MODAL */}

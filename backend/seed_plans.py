@@ -16,9 +16,9 @@ def seed_plans(db: Session = None):
     Base.metadata.create_all(bind=engine)
 
     plans_data = [
-        {"plan_name": "Basic", "chats_per_day": 5, "context_limit": 500, "download_limit": 2, "history_days": 7},
-        {"plan_name": "Pro", "chats_per_day": 50, "context_limit": 2000, "download_limit": 20, "history_days": 30},
-        {"plan_name": "Plus", "chats_per_day": 9999, "context_limit": 9999, "download_limit": 9999, "history_days": 9999},
+        {"plan_name": "Basic", "credit_limit": 3000, "history_days": 7},
+        {"plan_name": "Pro", "credit_limit": 10000, "history_days": 30},
+        {"plan_name": "Plus", "credit_limit": 30000, "history_days": 9999},
     ]
 
     try:

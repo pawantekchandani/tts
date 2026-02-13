@@ -76,9 +76,7 @@ const PlanSettings = () => {
                     <thead className="bg-gray-700/50 text-gray-300 uppercase text-sm font-bold">
                         <tr>
                             <th className="px-6 py-4">Plan Name</th>
-                            <th className="px-6 py-4 text-center">Chats / Day</th>
-                            <th className="px-6 py-4 text-center">Context Size (Chars)</th>
-                            <th className="px-6 py-4 text-center">Download Limit</th>
+                            <th className="px-6 py-4 text-center">Credit Limit</th>
                             <th className="px-6 py-4 text-center">History (Days)</th>
                             <th className="px-6 py-4 text-right">Actions</th>
                         </tr>
@@ -87,9 +85,7 @@ const PlanSettings = () => {
                         {plans.map((plan) => (
                             <tr key={plan.id} className="hover:bg-gray-700/30 transition-colors">
                                 <td className="px-6 py-4 text-white font-medium">{plan.plan_name}</td>
-                                <td className="px-6 py-4 text-gray-300 text-center">{plan.chats_per_day}</td>
-                                <td className="px-6 py-4 text-gray-300 text-center">{plan.context_limit}</td>
-                                <td className="px-6 py-4 text-gray-300 text-center">{plan.download_limit}</td>
+                                <td className="px-6 py-4 text-gray-300 text-center">{plan.credit_limit}</td>
                                 <td className="px-6 py-4 text-gray-300 text-center">{plan.history_days}</td>
                                 <td className="px-6 py-4 text-right">
                                     <button
@@ -121,16 +117,8 @@ const PlanSettings = () => {
 
                         <div className="space-y-3">
                             <div className="flex justify-between items-center">
-                                <span className="text-gray-400 text-sm">Chats / Day</span>
-                                <span className="text-white font-medium">{plan.chats_per_day}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-gray-400 text-sm">Context Limit</span>
-                                <span className="text-white font-medium">{plan.context_limit} chars</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-gray-400 text-sm">Download Limit</span>
-                                <span className="text-white font-medium">{plan.download_limit}</span>
+                                <span className="text-gray-400 text-sm">Credit Limit</span>
+                                <span className="text-white font-medium">{plan.credit_limit}</span>
                             </div>
                             <div className="flex justify-between items-center">
                                 <span className="text-gray-400 text-sm">History Retention</span>
@@ -154,31 +142,11 @@ const PlanSettings = () => {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">
-                                <label className="text-sm font-medium text-gray-400">Chats Per Day</label>
+                                <label className="text-sm font-medium text-gray-400">Credit Limit</label>
                                 <input
                                     type="number"
-                                    name="chats_per_day"
-                                    value={formData.chats_per_day}
-                                    onChange={handleChange}
-                                    className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium text-gray-400">Context Limit</label>
-                                <input
-                                    type="number"
-                                    name="context_limit"
-                                    value={formData.context_limit}
-                                    onChange={handleChange}
-                                    className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium text-gray-400">Download Limit</label>
-                                <input
-                                    type="number"
-                                    name="download_limit"
-                                    value={formData.download_limit}
+                                    name="credit_limit"
+                                    value={formData.credit_limit}
                                     onChange={handleChange}
                                     className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none"
                                 />
