@@ -1,30 +1,18 @@
-stages:
-  - build
-  - deploy
-
-# 1. Corrected Build Stage
-build_frontend:
-  stage: build
-  image: node:18
-  script:
-    - cd frontend        # Move into the folder where package.json lives
-    - npm install        # Install dependencies
-    - npm run build      # Create the dist folder
-  artifacts:
-    paths:
-      - frontend/dist/   # Save the build results from the subfolder
-    expire_in: 1 week
-
-# 2. Corrected Deploy Stage
 deploy_to_milesweb:
   stage: deploy
   image: alpine:latest
   script:
     - apk add lftp
-    # Note: We now use the path from the 'frontend' subfolder
     - lftp -e "set ftp:ssl-allow no; open $FTP_SERVER; user $FTP_USERNAME $FTP_PASSWORD; 
       mirror -R frontend/dist/ tts.testingprojects.online/;
       mirror -R backend/ tts_app/backend/; 
+      
+      # YE LINE ADD KI HAI: Root ki requirements.txt ko tts_app/ mein bhejne ke liye
+      put requirements.txt -o tts_app/requirements.txt; 
+      
+      # Agar passenger_wsgi.py bhi update karni ho to:
+      put passenger_wsgi.py -o tts_app/passenger_wsgi.py;
+
       mkdir -p tts_app/backend/tmp;
       put -E /dev/null -o tts_app/backend/tmp/restart.txt;
       quit"
