@@ -60,6 +60,35 @@ def run_auto_migrations():
                 except Exception as e:
                     logger.error(f"Migration Error: Failed to create 'transactions' table: {e}")
 
+            # Check for 'plan_limits' table updates
+            if inspector.has_table("plan_limits"):
+                columns = [col['name'] for col in inspector.get_columns("plan_limits")]
+                
+                # Add 'credit_limit' if missing
+                if "credit_limit" not in columns:
+                    logger.info("Migration: Adding 'credit_limit' column to 'plan_limits' table...")
+                    with engine.connect() as conn:
+                        conn.execute(text("ALTER TABLE plan_limits ADD COLUMN credit_limit INTEGER DEFAULT 0"))
+                        conn.commit()
+                    logger.info("Migration: 'credit_limit' column added successfully.")
+                else:
+                    logger.info("Schema Check: 'credit_limit' column already exists.")
+
+                # Remove old limits if present
+                old_columns = ["download_limit", "chats_per_day", "context_limit"]
+                for col in old_columns:
+                    if col in columns:
+                        logger.info(f"Migration: Removing '{col}' column from 'plan_limits' table...")
+                        try:
+                            with engine.connect() as conn:
+                                conn.execute(text(f"ALTER TABLE plan_limits DROP COLUMN {col}"))
+                                conn.commit()
+                            logger.info(f"Migration: '{col}' column removed successfully.")
+                        except Exception as e:
+                            logger.error(f"Migration Error: Failed to drop '{col}': {e}")
+                    else:
+                        logger.info(f"Schema Check: '{col}' column already removed.")
+
             # 2. Grant Admin Access Automatically
             grant_admin_access("Admin@gmail.com")
                 
