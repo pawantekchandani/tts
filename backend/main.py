@@ -1,6 +1,26 @@
+import os
+import sys
+
+# 1. FORCE SYSTEM PATHS AT THE OS LEVEL
+os.environ["PATH"] += os.pathsep + "/home/rseivuhw/bin"
+
+from pydub import AudioSegment
+# Set specific paths as backup
+AudioSegment.converter = "/home/rseivuhw/bin/ffmpeg"
+AudioSegment.ffprobe = "/home/rseivuhw/bin/ffprobe"
+
+# 2. DEBUG PRINT TO VERIFY
+print(f"DEBUG: Current OS PATH: {os.environ['PATH']}")
+
+# 3. NOW LOAD THE REST OF THE APP
+from pathlib import Path
+from dotenv import load_dotenv
+
+env_path = Path(__file__).parent / ".env"
+load_dotenv(dotenv_path=env_path)
+
 import sentry_sdk
 import logging
-import sys
 from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
@@ -11,10 +31,8 @@ from models import User, Conversion, PasswordReset, Transaction, PlanLimits, Dow
 from schemas import UserCreate, UserOut, Token, ForgotPasswordRequest, ResetPasswordRequest, PlanLimitUpdate, UserProfile
 from auth import hash_password, verify_password, create_access_token, generate_user_id
 import boto3
-import os
-from dotenv import load_dotenv
 import uuid
-from pathlib import Path
+from fastapi.staticfiles import StaticFiles
 from fastapi.staticfiles import StaticFiles
 from schemas import ConversionCreate, ConversionOut
 from datetime import datetime, timedelta
@@ -27,20 +45,7 @@ from fastapi.security import OAuth2PasswordBearer
 from auth import verify_token
 import io
 import traceback
-from pydub import AudioSegment
 
-# --- FIX FOR FFmpeg ON SERVER ---
-# Allow setting specific paths for ffmpeg/ffprobe via environment variables
-# This is useful for shared hosting where system-wide install isn't possible
-ffmpeg_path = os.getenv("FFMPEG_PATH") 
-ffprobe_path = os.getenv("FFPROBE_PATH")
-
-if ffmpeg_path:
-    AudioSegment.converter = ffmpeg_path
-
-if ffprobe_path:
-    AudioSegment.ffprobe = ffprobe_path
-# -------------------------------
 # --- AUTO MIGRATION ---
 from auto_migrate import run_auto_migrations
 from utils import check_user_limits, smart_split
@@ -59,14 +64,13 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler("app_errors.log"),
+        logging.FileHandler("app_errors.log", encoding='utf-8'), # ADD ENCODING HERE
         logging.StreamHandler(sys.stdout)
     ]
 )
 logger = logging.getLogger(__name__)
 
-# Load .env file
-load_dotenv(Path(__file__).parent / ".env")
+
 
 app = FastAPI()
 
