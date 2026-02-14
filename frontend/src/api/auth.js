@@ -8,7 +8,7 @@ const API_BASE_URL = `${BASE_URL}/api`
 
 // Add timeout to axios requests
 export const axiosInstance = axios.create({
-  timeout: 10000,
+  timeout: 1800000, // 30 minutes
 })
 
 // NEW: Interceptor to handle session expiration (401) automatically

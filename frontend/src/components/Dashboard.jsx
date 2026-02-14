@@ -136,7 +136,7 @@ export default function Dashboard({ userPlan, onNavigate }) {
         { text, voice_id: voice, engine },
         {
           headers: { Authorization: `Bearer ${token}` },
-          timeout: 30000
+          timeout: 1800000 // 30 minutes
         }
       );
 
