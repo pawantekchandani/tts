@@ -16,6 +16,8 @@ import Home from './components/Home'
 import About from './components/About'
 import ComingSoon from './components/ComingSoon'
 import Plans from './components/Plans'
+import Footer from './components/Footer'
+
 
 // Admin View Component
 function AdminView() {
@@ -202,6 +204,9 @@ function AppContent() {
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      {!location.pathname.startsWith('/admin') && (
+        <Footer onNavigate={handleNavigate} />
+      )}
     </>
   )
 }

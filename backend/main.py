@@ -28,6 +28,19 @@ from auth import verify_token
 import io
 import traceback
 from pydub import AudioSegment
+
+# --- FIX FOR FFmpeg ON SERVER ---
+# Allow setting specific paths for ffmpeg/ffprobe via environment variables
+# This is useful for shared hosting where system-wide install isn't possible
+ffmpeg_path = os.getenv("FFMPEG_PATH") 
+ffprobe_path = os.getenv("FFPROBE_PATH")
+
+if ffmpeg_path:
+    AudioSegment.converter = ffmpeg_path
+
+if ffprobe_path:
+    AudioSegment.ffprobe = ffprobe_path
+# -------------------------------
 # --- AUTO MIGRATION ---
 from auto_migrate import run_auto_migrations
 from utils import check_user_limits, smart_split
@@ -210,6 +223,8 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
             logger.error(f"Failed to send welcome email: {str(e)}")
 
         return db_user
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Signup Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
