@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import toWav from 'audiobuffer-to-wav';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LogOut, Play, Download, Loader, Sparkles, FileText, Music, Trash2, Maximize2, X, ChevronRight } from 'lucide-react';
@@ -11,6 +12,11 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || `http://${window.location.h
 
 export default function Dashboard({ userPlan, onNavigate }) {
 
+  // URL Search Params for state sync
+  const [searchParams, setSearchParams] = useSearchParams();
+  const showHistoryModal = searchParams.get('view') === 'history';
+
+  // Local state
   const [text, setText] = useState('');
   const [voice, setVoice] = useState('Kajal');
   const [engine, setEngine] = useState('neural');
@@ -23,7 +29,6 @@ export default function Dashboard({ userPlan, onNavigate }) {
   const [hasMore, setHasMore] = useState(true);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
-  const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [speed, setSpeed] = useState(1.0);
   const [creditsUsed, setCreditsUsed] = useState(0);
   const [creditLimit, setCreditLimit] = useState(0);
@@ -461,7 +466,7 @@ export default function Dashboard({ userPlan, onNavigate }) {
 
                     {!loadingHistory && history.length > 0 && (
                       <button
-                        onClick={() => setShowHistoryModal(true)}
+                        onClick={() => setSearchParams({ view: 'history' })}
                         className="w-full mt-4 py-2 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors flex items-center justify-center gap-2"
                       >
                         View All History
@@ -487,7 +492,7 @@ export default function Dashboard({ userPlan, onNavigate }) {
               exit={{ x: "100%" }}
               className="w-full max-w-lg bg-brand-dark h-full shadow-2xl relative"
             >
-              <ChatHistory onClose={() => setShowHistoryModal(false)} />
+              <ChatHistory onClose={() => setSearchParams({})} />
             </motion.div>
           </div>
         )

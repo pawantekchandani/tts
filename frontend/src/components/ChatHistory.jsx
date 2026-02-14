@@ -1,20 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
+import { useSearchParams } from 'react-router-dom';
 import { Play, Download, Loader, Maximize2, Music, X, Search, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { authAPI, axiosInstance as axios } from '../api/auth';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:8000`;
 
 export default function ChatHistory({ onClose }) {
+    const [searchParams, setSearchParams] = useSearchParams();
     const [history, setHistory] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(true);
     const [audioUrl, setAudioUrl] = useState(null);
 
-    // New Filter States
-    const [searchQuery, setSearchQuery] = useState('');
-    const [selectedDate, setSelectedDate] = useState('');
+    // Initialize local state from URL params
+    const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
+    const [selectedDate, setSelectedDate] = useState(searchParams.get('date') || '');
 
     // Re-use secure fetch helper
     const fetchSecureAudio = async (url) => {
@@ -52,10 +54,13 @@ export default function ChatHistory({ onClose }) {
             const targetPage = reset ? 1 : page + 1;
             const limit = 20;
 
-            // Add search and date params if they exist
+            // Get current filters from URL directly
+            const currentSearch = searchParams.get('search') || '';
+            const currentDate = searchParams.get('date') || '';
+
             const params = { page: targetPage, limit };
-            if (searchQuery) params.search = searchQuery;
-            if (selectedDate) params.date = selectedDate;
+            if (currentSearch) params.search = currentSearch;
+            if (currentDate) params.date = currentDate;
 
             const response = await axios.get(`${API_BASE_URL}/api/history`, {
                 params,
@@ -85,33 +90,46 @@ export default function ChatHistory({ onClose }) {
         }
     };
 
-    // Initial load
+    // Sync state with URL params when they change (e.g. back button navigation)
     useEffect(() => {
-        fetchHistory(true);
-    }, []);
+        const s = searchParams.get('search') || '';
+        const d = searchParams.get('date') || '';
 
-    // Handle Search Submit
+        // Update inputs if they don't match URL (e.g. external navigation)
+        // We only do this check to avoid overwriting user typing if debounce was used, 
+        // but here we submit explicitly so it's fine.
+        setSearchQuery(s);
+        setSelectedDate(d);
+
+        fetchHistory(true);
+    }, [searchParams.get('search'), searchParams.get('date')]);
+
+    // Handle Search Submit - Updates URL
     const handleSearchSubmit = (e) => {
         e.preventDefault();
-        fetchHistory(true);
+        const current = Object.fromEntries(searchParams.entries());
+        if (searchQuery) {
+            current.search = searchQuery;
+        } else {
+            delete current.search;
+        }
+        // Ensure view is kept
+        current.view = 'history';
+        setSearchParams(current);
     };
 
-    // Handle Date Change
+    // Handle Date Change - Updates URL
     const handleDateChange = (e) => {
-        setSelectedDate(e.target.value);
-        // State update is async, so we might need useEffect or pass value directly.
-        // Better safely trigger in useEffect or wait. 
-        // Since state update is fast enough for UI usually, but correctly should depend on effect.
-        // However, to keep simple:
+        const newDate = e.target.value;
+        const current = Object.fromEntries(searchParams.entries());
+        if (newDate) {
+            current.date = newDate;
+        } else {
+            delete current.date;
+        }
+        current.view = 'history';
+        setSearchParams(current);
     };
-
-    // Trigger fetch when date changes
-    useEffect(() => {
-        // Only fetch if date is explicitly set or cleared (avoid initial double fetch since initial fetch is empty date)
-        // But initial fetch runs once with empty date.
-        // If user sets date, this runs.
-        fetchHistory(true);
-    }, [selectedDate]);
 
 
     return (
@@ -157,7 +175,12 @@ export default function ChatHistory({ onClose }) {
                         />
                         {selectedDate && (
                             <button
-                                onClick={() => setSelectedDate('')}
+                                onClick={() => {
+                                    const current = Object.fromEntries(searchParams.entries());
+                                    delete current.date;
+                                    current.view = 'history';
+                                    setSearchParams(current);
+                                }}
                                 className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-white/10 rounded-full text-gray-400"
                             >
                                 <X className="w-3 h-3" />
