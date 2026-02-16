@@ -1,6 +1,6 @@
-# 🎧 PollyGlot TTS
+# 🎧 Neural Voice Studio
 
-**PollyGlot TTS** is a professional, full-stack Text-to-Speech (TTS) application that leverages **AWS Polly** to convert text into lifelike speech. It features a robust credit-based system, user authentication, and advanced handling for long-form content through intelligent text chunking and audio stitching.
+**Neural Voice Studio** is a professional, full-stack Text-to-Speech (TTS) application that leverages **AWS Polly** to convert text into lifelike speech. It features a robust credit-based system, user authentication, and advanced handling for long-form content through intelligent text chunking and audio stitching.
 
 ---
 
@@ -78,7 +78,7 @@ graph TD
 4. **Configure Environment Variables**:
    Create a `.env` file in the `backend/` directory:
     ```env
-    DATABASE_URL=mysql+mysqlconnector://user:password@localhost/pollyglot_db
+    DATABASE_URL=mysql+mysqlconnector://user:password@localhost/neural_voice_db
     AWS_ACCESS_KEY_ID=your_access_key
     AWS_SECRET_ACCESS_KEY=your_secret_key
     AWS_REGION=us-east-1
@@ -123,7 +123,7 @@ The application is designed to be plug-and-play:
 
 ## 🧵 Long Text Processing (Chunking & Stitching)
 
-One of the standout features of PollyGlot TTS is its ability to handle immense blocks of text. Since most TTS engines have character limits per request (e.g., AWS Polly's 3,000 character limit), we implemented a **Smart Splitter**:
+One of the standout features of Neural Voice Studio is its ability to handle immense blocks of text. Since most TTS engines have character limits per request (e.g., AWS Polly's 3,000 character limit), we implemented a **Smart Splitter**:
 
 1. **Smart Splitting**: If text exceeds 3,000 characters, it is split at the nearest sentence ending (`.`, `?`, `!`) to ensure natural pauses.
 2. **Sequential Processing**: Each chunk is sent to AWS Polly independently.
