@@ -10,3 +10,4 @@ __pycache__/
 backend/app_errors.log
 backend/.env
 backend/.env
+setup_env.py
