@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { authAPI } from '../api/auth'
 import toast from 'react-hot-toast'
@@ -8,6 +8,14 @@ export default function Login({ onSuccess, onSwitchToRegister, onSwitchToForgotP
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
+
+  useEffect(() => {
+    // Check if user was redirected due to session expiry
+    if (localStorage.getItem('session_expired')) {
+      toast.error('Session expired. Please login again.');
+      localStorage.removeItem('session_expired');
+    }
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault()

@@ -188,8 +188,10 @@ export default function Dashboard({ userPlan, onNavigate }) {
     }
   };
   const handleLogout = () => {
-    authAPI.logout();
-    window.location.reload();
+    if (window.confirm("Are you sure you want to logout?")) {
+      authAPI.logout();
+      window.location.reload();
+    }
   };
 
   return (
