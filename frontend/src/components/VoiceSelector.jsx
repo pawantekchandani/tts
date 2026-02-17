@@ -1,104 +1,215 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, ChevronDown, Sparkles, Bot } from 'lucide-react';
+import { Check, ChevronDown, Globe, Mic } from 'lucide-react';
 
-const neuralVoices = [
-    { id: 'Kajal', name: 'Kajal', gender: 'Female', lang: 'IN', flag: '🇮🇳', style: 'Natural & Expressive' },
-];
-
-const standardVoices = [
-    { id: 'Aditi', name: 'Aditi', gender: 'Female', lang: 'IN', flag: '🇮🇳', style: 'Soft & Clear' },
-    { id: 'Raveena', name: 'Raveena', gender: 'Female', lang: 'IN', flag: '🇮🇳', style: 'Clear & Professional' },
+const voiceData = [
+    {
+        lang: 'English (US)',
+        code: 'US',
+        flag: '🇺🇸',
+        engine: 'neural',
+        voices: [
+            { id: 'en-US-JennyNeural', name: 'Jenny', gender: 'Female', style: 'Conversational' },
+            { id: 'en-US-GuyNeural', name: 'Guy', gender: 'Male', style: 'Professional' },
+            { id: 'en-US-AriaNeural', name: 'Aria', gender: 'Female', style: 'Narration' },
+            { id: 'en-US-DavisNeural', name: 'Davis', gender: 'Male', style: 'Casual' },
+            { id: 'en-US-JaneNeural', name: 'Jane', gender: 'Female', style: 'Friendly' },
+            { id: 'en-US-JasonNeural', name: 'Jason', gender: 'Male', style: 'Friendly' },
+            { id: 'en-US-NancyNeural', name: 'Nancy', gender: 'Female', style: 'Cheerful' },
+            { id: 'en-US-SaraNeural', name: 'Sara', gender: 'Female', style: 'Cheerful' },
+            { id: 'en-US-TonyNeural', name: 'Tony', gender: 'Male', style: 'Professional' },
+        ]
+    },
+    {
+        lang: 'English (UK)',
+        code: 'UK',
+        flag: '🇬🇧',
+        engine: 'neural',
+        voices: [
+            { id: 'en-GB-SoniaNeural', name: 'Sonia', gender: 'Female', style: 'Formal' },
+            { id: 'en-GB-RyanNeural', name: 'Ryan', gender: 'Male', style: 'Clear' },
+            { id: 'en-GB-LibbyNeural', name: 'Libby', gender: 'Female', style: 'Friendly' },
+            { id: 'en-GB-AbbiNeural', name: 'Abbi', gender: 'Female', style: 'Story' },
+            { id: 'en-GB-AlfNeural', name: 'Alfie', gender: 'Male', style: 'Story' },
+            { id: 'en-GB-BellaNeural', name: 'Bella', gender: 'Female', style: 'Casual' },
+            { id: 'en-GB-ElliotNeural', name: 'Elliot', gender: 'Male', style: 'News' },
+            { id: 'en-GB-EthanNeural', name: 'Ethan', gender: 'Male', style: 'Casual' },
+            { id: 'en-GB-HollieNeural', name: 'Hollie', gender: 'Female', style: 'Conversational' },
+            { id: 'en-GB-MaisieNeural', name: 'Maisie', gender: 'Female', style: 'Child' },
+            { id: 'en-GB-NoahNeural', name: 'Noah', gender: 'Male', style: 'Neutral' },
+            { id: 'en-GB-OliverNeural', name: 'Oliver', gender: 'Male', style: 'Neutral' },
+            { id: 'en-GB-OliviaNeural', name: 'Olivia', gender: 'Female', style: 'Professional' },
+            { id: 'en-GB-ThomasNeural', name: 'Thomas', gender: 'Male', style: 'Formal' },
+        ]
+    },
+    {
+        lang: 'English (India)',
+        code: 'IN',
+        flag: '🇮🇳',
+        engine: 'standard',
+        voices: [
+            { id: 'en-IN-NeerjaNeural', name: 'Neerja', gender: 'Female', style: 'Warm & Expressive' },
+            { id: 'en-IN-PrabhatNeural', name: 'Prabhat', gender: 'Male', style: 'Clear' },
+            { id: 'en-IN-KavyaNeural', name: 'Kavya', gender: 'Female', style: 'General' },
+            { id: 'en-IN-KunalNeural', name: 'Kunal', gender: 'Male', style: 'General' },
+            { id: 'en-IN-RehaanNeural', name: 'Rehaan', gender: 'Male', style: 'General' },
+            { id: 'en-IN-ArjunNeural', name: 'Arjun', gender: 'Male', style: 'General' },
+        ]
+    },
+    {
+        lang: 'Hindi (India)',
+        code: 'HI',
+        flag: '🇮🇳',
+        engine: 'standard',
+        voices: [
+            { id: 'hi-IN-SwaraNeural', name: 'Swara', gender: 'Female', style: 'Natural' },
+            { id: 'hi-IN-MadhurNeural', name: 'Madhur', gender: 'Male', style: 'Professional' },
+            { id: 'hi-IN-KavyaNeural', name: 'Kavya', gender: 'Female', style: 'General' },
+            { id: 'hi-IN-KunalNeural', name: 'Kunal', gender: 'Male', style: 'General' },
+            { id: 'hi-IN-RehaanNeural', name: 'Rehaan', gender: 'Male', style: 'General' },
+        ]
+    }
 ];
 
 export default function VoiceSelector({ selectedVoice, onSelect, selectedEngine, onEngineChange }) {
-    const [isOpen, setIsOpen] = useState(false);
+    const [isLangOpen, setIsLangOpen] = useState(false);
+    const [isVoiceOpen, setIsVoiceOpen] = useState(false);
 
-    // Debugging: Log engine state to verify prop propagation
-    console.log('VoiceSelector Rendered. Selected Engine:', selectedEngine);
+    // Find current language group based on selected voice
+    // If selectedVoice is null, currentGroup will be undefined
+    const currentGroup = voiceData.find(group =>
+        group.voices.some(v => v.id === selectedVoice)
+    );
 
-    // Determine active voice list based on engine
-    const currentVoices = selectedEngine === 'neural' ? neuralVoices : standardVoices;
+    // Find current voice object
+    const currentVoice = currentGroup?.voices.find(v => v.id === selectedVoice);
 
-    // Find currently selected voice object for display
-    const selected = currentVoices.find(v => v.id === selectedVoice) || currentVoices[0];
+    const handleLanguageSelect = (group) => {
+        setIsLangOpen(false);
+        // Default to first voice of new language
+        const newVoice = group.voices[0];
+        onSelect(newVoice.id);
+
+        // Update engine if needed
+        if (group.engine !== selectedEngine) {
+            onEngineChange(group.engine);
+        }
+    };
 
     return (
-        <div className="relative z-30 space-y-4">
-            {/* Engine Toggle - Segmented Control */}
-            <div className="bg-[#020617] p-1.5 rounded-2xl flex border border-white/10 relative">
-                <button
-                    onClick={() => onEngineChange('neural')}
-                    style={{
-                        backgroundColor: selectedEngine === 'neural' ? '#2563eb' : 'transparent',
-                        color: selectedEngine === 'neural' ? 'white' : '#9ca3af'
-                    }}
-                    className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all duration-200 relative overflow-hidden ring-1 ${selectedEngine === 'neural' ? 'ring-white/20 shadow-lg z-10' : 'ring-transparent hover:bg-white/5'}`}
-                >
-                    <Sparkles className={`w-4 h-4 mr-2 ${selectedEngine === 'neural' ? 'text-white' : 'text-gray-400'}`} />
-                    Natural
-                </button>
-                <button
-                    onClick={() => onEngineChange('standard')}
-                    style={{
-                        backgroundColor: selectedEngine === 'standard' ? '#2563eb' : 'transparent',
-                        color: selectedEngine === 'standard' ? 'white' : '#9ca3af'
-                    }}
-                    className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all duration-200 relative overflow-hidden ring-1 ${selectedEngine === 'standard' ? 'ring-white/20 shadow-lg z-10' : 'ring-transparent hover:bg-white/5'}`}
-                >
-                    <Bot className={`w-4 h-4 mr-2 ${selectedEngine === 'standard' ? 'text-white' : 'text-gray-400'}`} />
-                    Standard
-                </button>
-            </div>
+        <div className="relative z-30 grid grid-cols-1 md:grid-cols-2 gap-4">
 
-
-
-            {/* Voice Dropdown */}
+            {/* Language Selection */}
             <div className="relative">
-                <label className="block text-sm font-medium text-gray-400 mb-2 ml-1">Select Voice</label>
+                <label className="block text-sm font-medium text-gray-400 mb-2 ml-1">Select Language</label>
                 <button
-                    onClick={() => setIsOpen(!isOpen)}
-                    className={`w-full flex items-center justify-between bg-[#1e293b] border border-white/10 rounded-2xl px-5 py-4 text-white hover:border-brand-blue/50 transition-all duration-200 group shadow-lg ${isOpen ? 'ring-2 ring-brand-blue/50 border-transparent' : ''}`}
+                    onClick={() => { setIsLangOpen(!isLangOpen); setIsVoiceOpen(false); }}
+                    className={`w-full flex items-center justify-between bg-[#1e293b] border border-white/10 rounded-2xl px-5 py-4 text-white hover:border-brand-blue/50 transition-all duration-200 group shadow-lg ${isLangOpen ? 'ring-2 ring-brand-blue/50 border-transparent' : ''}`}
                 >
-                    <div className="flex items-center gap-4">
-                        <span className="text-3xl filter drop-shadow-md">{selected.flag}</span>
-                        <div className="text-left">
-                            <div className="font-bold text-white group-hover:text-brand-blue transition-colors">{selected.name}</div>
-                            <div className="text-xs text-blue-200/70">{selected.style}</div>
+                    {currentGroup ? (
+                        <div className="flex items-center gap-3">
+                            <div className="bg-brand-blue/20 p-2 rounded-lg">
+                                <Globe className="w-5 h-5 text-brand-blue" />
+                            </div>
+                            <div className="text-left">
+                                <div className="font-bold text-white group-hover:text-brand-blue transition-colors">{currentGroup.lang}</div>
+                                <div className="text-xs text-gray-400">Region: {currentGroup.code} {currentGroup.flag}</div>
+                            </div>
                         </div>
-                    </div>
-                    <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform duration-300 ${isOpen ? 'rotate-180 text-brand-blue' : ''}`} />
+                    ) : (
+                        <span className="text-gray-400 font-medium">Choose a language...</span>
+                    )}
+                    <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform duration-300 ${isLangOpen ? 'rotate-180 text-brand-blue' : ''}`} />
                 </button>
 
                 <AnimatePresence>
-                    {isOpen && (
+                    {isLangOpen && (
                         <motion.div
                             initial={{ opacity: 0, height: 0, marginTop: 0 }}
                             animate={{ opacity: 1, height: 'auto', marginTop: 8 }}
                             exit={{ opacity: 0, height: 0, marginTop: 0 }}
-                            className="min-w-full bg-gray-900 border border-white/10 rounded-2xl shadow-inner overflow-hidden ring-1 ring-white/5"
+                            className="absolute w-full z-50 bg-gray-900 border border-white/10 rounded-2xl shadow-xl overflow-hidden ring-1 ring-white/5"
                         >
-                            <div className="p-2 space-y-1 max-h-80 overflow-y-auto">
-                                {currentVoices.map((voice) => (
+                            <div className="p-2 space-y-1">
+                                {voiceData.map((group) => (
+                                    <button
+                                        key={group.lang}
+                                        onClick={() => handleLanguageSelect(group)}
+                                        className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all border
+                                        ${currentGroup?.lang === group.lang
+                                                ? 'bg-brand-blue/10 text-white border-brand-blue/30'
+                                                : 'hover:bg-white/5 border-transparent text-gray-300'
+                                            }`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-xl">{group.flag}</span>
+                                            <span className={`font-medium ${currentGroup?.lang === group.lang ? 'text-brand-blue' : ''}`}>
+                                                {group.lang}
+                                            </span>
+                                        </div>
+                                        {currentGroup?.lang === group.lang && <Check className="w-4 h-4 text-brand-blue" />}
+                                    </button>
+                                ))}
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </div>
+
+            {/* Voice Selection */}
+            <div className={`relative ${!currentGroup ? 'opacity-50 pointer-events-none' : ''}`}>
+                <label className="block text-sm font-medium text-gray-400 mb-2 ml-1">Select Voice</label>
+                <button
+                    onClick={() => { setIsVoiceOpen(!isVoiceOpen); setIsLangOpen(false); }}
+                    disabled={!currentGroup}
+                    className={`w-full flex items-center justify-between bg-[#1e293b] border border-white/10 rounded-2xl px-5 py-4 text-white hover:border-brand-purple/50 transition-all duration-200 group shadow-lg ${isVoiceOpen ? 'ring-2 ring-brand-purple/50 border-transparent' : ''}`}
+                >
+                    {currentVoice ? (
+                        <div className="flex items-center gap-3">
+                            <div className="bg-brand-purple/20 p-2 rounded-lg">
+                                <Mic className="w-5 h-5 text-brand-purple" />
+                            </div>
+                            <div className="text-left">
+                                <div className="font-bold text-white group-hover:text-brand-purple transition-colors">{currentVoice.name}</div>
+                                <div className="text-xs text-gray-400">{currentVoice.style} • {currentVoice.gender}</div>
+                            </div>
+                        </div>
+                    ) : (
+                        <span className="text-gray-500 font-medium">Select Language First</span>
+                    )}
+                    <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform duration-300 ${isVoiceOpen ? 'rotate-180 text-brand-purple' : ''}`} />
+                </button>
+
+                <AnimatePresence>
+                    {isVoiceOpen && (
+                        <motion.div
+                            initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                            animate={{ opacity: 1, height: 'auto', marginTop: 8 }}
+                            exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                            className="absolute w-full z-40 bg-gray-900 border border-white/10 rounded-2xl shadow-xl overflow-hidden ring-1 ring-white/5"
+                        >
+                            <div className="p-2 space-y-1 max-h-60 overflow-y-auto custom-scrollbar">
+                                {currentGroup?.voices.map((voice) => (
                                     <button
                                         key={voice.id}
                                         onClick={() => {
                                             onSelect(voice.id);
-                                            setIsOpen(false);
+                                            setIsVoiceOpen(false);
                                         }}
                                         className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all border
                                         ${selectedVoice === voice.id
-                                                ? 'bg-brand-blue text-white border-brand-blue shadow-md'
+                                                ? 'bg-brand-purple text-white border-brand-purple shadow-md'
                                                 : 'hover:bg-white/5 border-transparent text-gray-300'
                                             }`}
                                     >
-                                        <div className="flex items-center gap-4">
-                                            <span className="text-2xl">{voice.flag}</span>
+                                        <div className="flex items-center gap-3">
                                             <div className="text-left">
                                                 <div className={`font-bold ${selectedVoice === voice.id ? 'text-white' : 'text-gray-200'}`}>
                                                     {voice.name}
                                                 </div>
-                                                <div className={`text-xs ${selectedVoice === voice.id ? 'text-blue-100' : 'text-gray-500'}`}>{voice.style}</div>
+                                                <div className={`text-xs ${selectedVoice === voice.id ? 'text-purple-100' : 'text-gray-500'}`}>
+                                                    {voice.style} • {voice.gender}
+                                                </div>
                                             </div>
                                         </div>
                                         {selectedVoice === voice.id && (

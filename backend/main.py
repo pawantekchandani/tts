@@ -1,13 +1,15 @@
 import os
 import sys
 
-# 1. FORCE SYSTEM PATHS AT THE OS LEVEL
-os.environ["PATH"] += os.pathsep + "/home/rseivuhw/bin"
+if os.name != 'nt':
+    # 1. FORCE SYSTEM PATHS AT THE OS LEVEL (Linux/Server only)
+    os.environ["PATH"] += os.pathsep + "/home/rseivuhw/bin"
 
 from pydub import AudioSegment
-# Set specific paths as backup
-AudioSegment.converter = "/home/rseivuhw/bin/ffmpeg"
-AudioSegment.ffprobe = "/home/rseivuhw/bin/ffprobe"
+# Set specific paths as backup for Linux
+if os.name != 'nt':
+    AudioSegment.converter = "/home/rseivuhw/bin/ffmpeg"
+    AudioSegment.ffprobe = "/home/rseivuhw/bin/ffprobe"
 
 # 2. DEBUG PRINT TO VERIFY
 print(f"DEBUG: Current OS PATH: {os.environ['PATH']}")
@@ -30,7 +32,8 @@ from database import engine, Base, get_db
 from models import User, Conversion, PasswordReset, Transaction, PlanLimits, DownloadHistory
 from schemas import UserCreate, UserOut, Token, ForgotPasswordRequest, ResetPasswordRequest, PlanLimitUpdate, UserProfile
 from auth import hash_password, verify_password, create_access_token, generate_user_id
-import boto3
+import azure.cognitiveservices.speech as speechsdk
+# Azure Speech SDK imported
 import uuid
 from fastapi.staticfiles import StaticFiles
 from fastapi.staticfiles import StaticFiles
@@ -47,8 +50,9 @@ import io
 import traceback
 
 # --- AUTO MIGRATION ---
+# --- AUTO MIGRATION ---
 from auto_migrate import run_auto_migrations
-from utils import check_user_limits, smart_split
+from utils import check_user_limits, smart_split, send_email
 from dependencies import get_current_user
 import admin_routes
 
@@ -101,18 +105,20 @@ async def log_requests(request: Request, call_next):
             content={"detail": "Internal Server Error. Please check logs/Sentry."}
         )
 
-# AWS Polly Client Configuration
+# Azure Speech Configuration
 try:
-    polly_client = boto3.client(
-        'polly',
-        aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-        aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
-        region_name=os.getenv('AWS_REGION', 'us-east-1')
-    )
-    logger.info("AWS Polly Client initialized successfully.")
+    speech_key = os.getenv("AZURE_SPEECH_KEY")
+    service_region = os.getenv("AZURE_SPEECH_REGION")
+
+    if not speech_key or not service_region:
+        raise ValueError("Azure Speech Key or Region not found in environment variables")
+
+    speech_config = speechsdk.SpeechConfig(subscription=speech_key, region=service_region)
+    speech_config.set_speech_synthesis_output_format(speechsdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3)
+    logger.info("Azure Speech Config initialized successfully.")
 except Exception as e:
-    logger.error(f"Failed to initialize AWS Polly client: {e}")
-    polly_client = None
+    logger.error(f"Failed to initialize Azure Speech Config: {e}")
+    speech_config = None
 
 app.add_middleware(
     CORSMiddleware,
@@ -190,39 +196,24 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
 
         # --- Send Welcome Email ---
         try:
-            sender_email = os.getenv("MAIL_USERNAME")
-            sender_password = os.getenv("MAIL_PASSWORD")
-            smtp_server = os.getenv("MAIL_SERVER", "smtp.gmail.com")
-            smtp_port = int(os.getenv("MAIL_PORT", "587"))
-
-            if sender_email and sender_password:
-                msg = MIMEMultipart()
-                msg['From'] = sender_email
-                msg['To'] = user.email
-                msg['Subject'] = "Welcome to Pollyglot - Successfully Registered!"
-
-                body = f"""
-                <div style="font-family: Arial, sans-serif; color: #333;">
-                    <h2 style="color: #ea580c;">Welcome to Pollyglot! 🎧</h2>
-                    <p>Hi there,</p>
-                    <p>Thank you for joining <b>Pollyglot</b>! Your account has been successfully created.</p>
-                    <p>You can now log in and start converting text to lifelike speech instantly.</p>
-                    <div style="margin: 20px 0;">
-                        <a href="http://localhost:5173/login" style="background-color: #ea580c; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Login to Dashboard</a>
-                    </div>
-                    <p>If you have any questions, feel free to rely to this email.</p>
-                    <br>
-                    <p>Best Regards,</p>
-                    <p><b>The Pollyglot Team</b></p>
+            subject = "Welcome to Pollyglot - Successfully Registered!"
+            body = f"""
+            <div style="font-family: Arial, sans-serif; color: #333;">
+                <h2 style="color: #ea580c;">Welcome to Pollyglot! 🎧</h2>
+                <p>Hi there,</p>
+                <p>Thank you for joining <b>Pollyglot</b>! Your account has been successfully created.</p>
+                <p>You can now log in and start converting text to lifelike speech instantly.</p>
+                <div style="margin: 20px 0;">
+                    <a href="http://localhost:5173/login" style="background-color: #ea580c; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Login to Dashboard</a>
                 </div>
-                """
-                msg.attach(MIMEText(body, 'html'))
+                <p>If you have any questions, feel free to rely to this email.</p>
+                <br>
+                <p>Best Regards,</p>
+                <p><b>The Pollyglot Team</b></p>
+            </div>
+            """
+            send_email(user.email, subject, body)
 
-                server = smtplib.SMTP(smtp_server, smtp_port)
-                server.starttls()
-                server.login(sender_email, sender_password)
-                server.send_message(msg)
-                server.quit()
         except Exception as e:
             logger.error(f"Failed to send welcome email: {str(e)}")
 
@@ -285,27 +276,13 @@ def forgot_password(request: ForgotPasswordRequest, req: Request, db: Session = 
     db.commit()
 
     try:
-        sender_email = os.getenv("MAIL_USERNAME")
-        sender_password = os.getenv("MAIL_PASSWORD")
-        smtp_server = os.getenv("MAIL_SERVER", "smtp.gmail.com")
-        smtp_port = int(os.getenv("MAIL_PORT", "587"))
-
         origin = req.headers.get("origin") or "http://localhost:3000"
         reset_link = f"{origin}/reset-password?token={token}"
 
-        msg = MIMEMultipart()
-        msg['From'] = sender_email
-        msg['To'] = request.email
-        msg['Subject'] = "Password Reset Request"
-
+        subject = "Password Reset Request"
         body = f"""<a href="{reset_link}">Click here to reset password</a>"""
-        msg.attach(MIMEText(body, 'html'))
-
-        server = smtplib.SMTP(smtp_server, smtp_port)
-        server.starttls()
-        server.login(sender_email, sender_password)
-        server.send_message(msg)
-        server.quit()
+        
+        send_email(request.email, subject, body)
         return {"message": "Reset link sent"}
     except Exception as e:
         logger.error(f"Email error: {str(e)}")
@@ -397,8 +374,10 @@ static_path.mkdir(exist_ok=True)
 def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if not conversion.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
-    if not polly_client:
-         raise HTTPException(status_code=500, detail="AWS Polly unavailable")
+    
+    # Check if Azure config is ready
+    if not speech_config:
+         raise HTTPException(status_code=500, detail="Azure Speech Service unavailable")
 
     # Check Plan Limits
     chars = len(conversion.text)
@@ -407,7 +386,20 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
         raise HTTPException(status_code=403, detail=limit_check['reason'])
 
     try:
-        # --- NEW LOGIC: SMART SPLIT & MERGE ---
+        # Default voice if not provided
+        voice_name = conversion.voice_id or "en-US-JennyNeural"
+        speech_config.speech_synthesis_voice_name = voice_name
+        
+        # Determine output path
+        now = datetime.now()
+        month_year = now.strftime("%B-%Y")
+        user_folder = str(current_user.id)
+        audio_base_path = static_path / "audio" / month_year / user_folder
+        audio_base_path.mkdir(parents=True, exist_ok=True)
+        filename = now.strftime("%b-%d_%H-%M-%S") + ".mp3"
+        file_path = audio_base_path / filename
+
+        # --- SMART SPLIT & MERGE ---
         if len(conversion.text) > 3000:
             chunks = smart_split(conversion.text)
             logger.info(f"Text too long, split into {len(chunks)} chunks.")
@@ -417,63 +409,66 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
             for i, chunk in enumerate(chunks):
                 if not chunk.strip():
                     continue
-                    
-                response = polly_client.synthesize_speech(
-                    Text=chunk,
-                    OutputFormat='mp3',
-                    VoiceId=conversion.voice_id or 'Joanna',
-                    Engine=conversion.engine
-                )
                 
-                # Convert stream to AudioSegment
-                audio_stream = io.BytesIO(response['AudioStream'].read())
-                chunk_audio = AudioSegment.from_file(audio_stream, format="mp3")
-                combined_audio += chunk_audio
-                logger.info(f"Processed chunk {i+1}/{len(chunks)}")
-            
-            # Export merged audio
-            now = datetime.now()
-            month_year = now.strftime("%B-%Y")
-            user_folder = str(current_user.id)
-            audio_base_path = static_path / "audio" / month_year / user_folder
-            audio_base_path.mkdir(parents=True, exist_ok=True)
-            
-            filename = now.strftime("%b-%d_%H-%M-%S") + ".mp3"
-            file_path = audio_base_path / filename
-            
+                # Create a temporary file for each chunk
+                temp_filename = f"temp_{current_user.id}_{i}_{now.timestamp()}.mp3"
+                temp_path = audio_base_path / temp_filename
+
+                # Use File Output (Avoids 0-byte issues on headless servers)
+                audio_config = speechsdk.audio.AudioConfig(filename=str(temp_path))
+                synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=audio_config)
+
+                result = synthesizer.speak_text_async(chunk).get()
+                
+                if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+                    try:
+                        # Load processed audio from file
+                        chunk_audio = AudioSegment.from_file(str(temp_path), format="mp3")
+                        combined_audio += chunk_audio
+                        logger.info(f"Processed chunk {i+1}/{len(chunks)}")
+                    except Exception as e:
+                        logger.error(f"Error processing chunk audio: {e}")
+                    finally:
+                        # Cleanup temp file
+                        if temp_path.exists():
+                            try:
+                                os.remove(temp_path)
+                            except:
+                                pass
+                                
+                elif result.reason == speechsdk.ResultReason.Canceled:
+                    cancellation_details = result.cancellation_details
+                    logger.error(f"Azure Speech Error: {cancellation_details.reason}, {cancellation_details.error_details}")
+                    raise Exception(f"Speech synthesis canceled: {cancellation_details.error_details}")
+
             combined_audio.export(str(file_path), format="mp3")
             
         else:
-            # --- OLD LOGIC: SINGLE CALL ---
-            response = polly_client.synthesize_speech(
-                Text=conversion.text,
-                OutputFormat='mp3',
-                VoiceId=conversion.voice_id or 'Joanna',
-                Engine=conversion.engine
-            )
+            # --- SINGLE CALL ---
+            # Output directly to file (Avoids 0-byte issues on headless servers)
+            audio_config = speechsdk.audio.AudioConfig(filename=str(file_path))
+            synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=audio_config)
+
+            result = synthesizer.speak_text_async(conversion.text).get()
             
-            now = datetime.now()
-            month_year = now.strftime("%B-%Y")
-            user_folder = str(current_user.id)
-            audio_base_path = static_path / "audio" / month_year / user_folder
-            audio_base_path.mkdir(parents=True, exist_ok=True)
-            
-            filename = now.strftime("%b-%d_%H-%M-%S") + ".mp3"
-            file_path = audio_base_path / filename
-            
-            with open(file_path, 'wb') as f:
-                f.write(response['AudioStream'].read())
+            if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+                logger.info(f"Conversion successful. Audio saved at: {file_path}")
+            elif result.reason == speechsdk.ResultReason.Canceled:
+                cancellation_details = result.cancellation_details
+                logger.error(f"Azure Speech Error: {cancellation_details.reason}, {cancellation_details.error_details}")
+                if "429" in str(cancellation_details.error_details):
+                     raise HTTPException(status_code=429, detail="Azure Service limit reached. Please try again later.")
+                raise Exception(f"Speech synthesis canceled: {cancellation_details.error_details}")
             
         audio_url = f"/static/audio/{month_year}/{user_folder}/{filename}"
         
         db_conversion = Conversion(
             text=conversion.text, audio_url=audio_url, 
-            voice_name=conversion.voice_id, user_id=current_user.id, created_at=now
+            voice_name=voice_name, user_id=current_user.id, created_at=now
         )
         db.add(db_conversion)
         
         # Increment Credits
-        # We checked limit before, so this shouldn't cross unless race condition (which is acceptable for now)
         current_user.credits_used = (current_user.credits_used or 0) + chars
         
         db.commit()
@@ -483,6 +478,8 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
             id=db_conversion.id, text=db_conversion.text, voice_name=db_conversion.voice_name,
             audio_url=audio_url, created_at=db_conversion.created_at.isoformat()
         )
+    except HTTPException as e:
+         raise e
     except Exception as e:
         error_trace = traceback.format_exc()
         logger.error(f"Conversion Error: {e}\nTraceback:\n{error_trace}")

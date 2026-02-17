@@ -2,6 +2,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import date
 from models import Transaction, PlanLimits, Conversion, DownloadHistory
+import os
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import logging
+
+logger = logging.getLogger(__name__)
 
 def check_user_limits(user_id: str, db: Session, text_length: int = 0) -> dict:
     """
@@ -65,3 +72,44 @@ def smart_split(text, limit=3000):
         chunks.append(text.strip())
     
     return chunks
+
+def send_email(to_email: str, subject: str, body_html: str):
+    """
+    Sends an email using SMTP.
+    If TESTING env var is set, logs the email instead of sending.
+    """
+    # Check for TESTING environment variable
+    if os.getenv("TESTING") == "True":
+        logger.info(f"TESTING MODE: Email suppression active.")
+        logger.info(f"To: {to_email}")
+        logger.info(f"Subject: {subject}")
+        # logger.info(f"Body: {body_html}") # Uncomment to see full body
+        return True
+
+    try:
+        sender_email = os.getenv("MAIL_USERNAME")
+        sender_password = os.getenv("MAIL_PASSWORD")
+        smtp_server = os.getenv("MAIL_SERVER", "smtp.gmail.com")
+        smtp_port = int(os.getenv("MAIL_PORT", "587"))
+
+        if not sender_email or not sender_password:
+            logger.warning("Email credentials missing. content not sent.")
+            return False
+
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['To'] = to_email
+        msg['Subject'] = subject
+
+        msg.attach(MIMEText(body_html, 'html'))
+
+        server = smtplib.SMTP(smtp_server, smtp_port)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.send_message(msg)
+        server.quit()
+        logger.info(f"Email sent successfully to {to_email}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send email to {to_email}: {str(e)}")
+        return False
