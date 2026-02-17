@@ -37,22 +37,6 @@
 
 ---
 
-## 📐 Architecture Diagram
-
-```mermaid
-graph TD
-    User((User)) -->|Interacts| FE[React Frontend]
-    FE -->|API Requests| BE[FastAPI Backend]
-    BE -->|Query/Store Data| DB[(MySQL Database)]
-    BE -->|TTS Request| AWS[AWS Polly Service]
-    AWS -->|Audio Stream| BE
-    BE -->|Audio Merging (Pydub)| BE
-    BE -->|Store Audio| Local[Local Storage /static/audio]
-    FE -->|Download| Local
-```
-
----
-
 ## ⚙️ Installation & Setup
 
 ### Prerequisites
