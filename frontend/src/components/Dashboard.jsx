@@ -145,7 +145,6 @@ export default function Dashboard({ userPlan, onNavigate }) {
 
     setIsLoading(true);
     setAudioUrl(null);
-    setError(null);
 
     try {
       const token = authAPI.getToken();
