@@ -8,7 +8,8 @@
 
 - **Multi-Engine Support**: Primarily uses AWS Polly for high-quality, neural text-to-speech conversion.
 - **Smart Long-Text Handling**: Automatically splits texts over 3,000 characters into intelligent chunks (preserving sentence structure) and stitches them into a single seamless audio file using Pydub.
-- **User Authentication**: Secure signup, login, and password reset functionality (via email).
+- **User Authentication**: Secure signup, login, and password reset functionality.
+- **Email Communication**: Dedicated **SMTP Server** integration for sending automated Welcome emails and Password Reset instructions, ensuring seamless user onboarding.
 - **Credit & Plan Management**: Credit-based usage system with different tiers (Basic, Pro, etc.) managed via an admin panel.
 - **Conversion History**: Detailed history of all conversions with persistent audio storage and search/filter capabilities.
 - **Admin Dashboard**: Real-time stats on user growth, earnings, and plan usage, plus the ability to modify plan limits dynamically.
