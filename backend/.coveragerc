@@ -1,0 +1,6 @@
+[run]
+omit =
+    */venv/*
+    */tests/*
+    *.txt
+    test_report*

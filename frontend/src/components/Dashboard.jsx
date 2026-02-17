@@ -18,7 +18,7 @@ export default function Dashboard({ userPlan, onNavigate }) {
 
   // Local state
   const [text, setText] = useState('');
-  const [voice, setVoice] = useState('Kajal');
+  const [voice, setVoice] = useState(null);
   const [engine, setEngine] = useState('neural');
   const [isLoading, setIsLoading] = useState(false);
   const [audioUrl, setAudioUrl] = useState(null);
@@ -51,9 +51,7 @@ export default function Dashboard({ userPlan, onNavigate }) {
     }
   };
 
-  useEffect(() => {
-    setVoice(engine === 'neural' ? 'Kajal' : 'Aditi');
-  }, [engine]);
+  // Engine-voice sync removed to support detailed selection in VoiceSelector
 
   useEffect(() => {
     if (audioRef.current) {
@@ -130,9 +128,24 @@ export default function Dashboard({ userPlan, onNavigate }) {
   };
 
   const handleConvert = async () => {
-    if (!text) return;
+    if (!text || !voice) return;
+
+    // --- LANGUAGE VALIDATION ---
+    // Check if text contains Devanagari (Hindi) characters
+    const hasHindiChars = /[\u0900-\u097F]/.test(text);
+
+    // Check if selected voice is an English voice (starts with 'en-')
+    const isEnglishVoice = voice.startsWith('en-');
+
+    if (hasHindiChars && isEnglishVoice) {
+      alert("Oops! The voice 'Jenny (US)' (or other English voices) cannot read Hindi text. Please try selecting 'Swara (Hindi)' or 'Madhur (Hindi)' and try again.");
+      return; // Stop generation
+    }
+    // ---------------------------
+
     setIsLoading(true);
     setAudioUrl(null);
+    setError(null);
 
     try {
       const token = authAPI.getToken();
@@ -252,11 +265,11 @@ export default function Dashboard({ userPlan, onNavigate }) {
 
                 <button
                   onClick={handleConvert}
-                  disabled={isLoading || !text}
+                  disabled={isLoading || !text || !voice}
                   className={`w-full py-3 sm:py-4 rounded-xl font-bold flex justify-center items-center gap-2
-                    ${isLoading || !text
-                      ? 'bg-gray-700 text-gray-400'
-                      : 'bg-gradient-to-r from-brand-blue to-brand-purple text-white'}
+                    ${isLoading || !text || !voice
+                      ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-brand-blue to-brand-purple text-white shadow-lg shadow-brand-blue/20 hover:shadow-brand-blue/40 transition-shadow'}
                   `}
                 >
                   {isLoading ? (

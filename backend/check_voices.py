@@ -1,54 +1,54 @@
 
-import boto3
 import os
+import sys
+import azure.cognitiveservices.speech as speechsdk
 from dotenv import load_dotenv
-from pathlib import Path
+
+# Force UTF-8 output
+sys.stdout.reconfigure(encoding='utf-8')
 
 # Load environment variables
 load_dotenv()
 
-def check_indian_voices():
-    try:
-        client = boto3.client(
-            'polly',
-            aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-            aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
-            region_name=os.getenv('AWS_REGION', 'us-east-1')
-        )
+def list_voices():
+    # 1. Get credentials
+    speech_key = os.getenv("AZURE_SPEECH_KEY")
+    service_region = os.getenv("AZURE_SPEECH_REGION")
 
-        response = client.describe_voices(LanguageCode='en-IN')
-        
-        neural_voices = []
-        standard_voices = []
-        
-        print("\n--- Indian English (en-IN) Voices ---\n")
-        
-        for voice in response['Voices']:
-            name = voice['Name']
-            gender = voice['Gender']
-            engines = voice['SupportedEngines']
-            
-            voice_info = f"- {name} ({gender})"
-            
-            if 'neural' in engines:
-                neural_voices.append(voice_info)
-            if 'standard' in engines:
-                standard_voices.append(voice_info)
-                
-            print(f"Name: {name}")
-            print(f"Gender: {gender}")
-            print(f"Supported Engines: {', '.join(engines)}")
-            print("-" * 30)
+    if not speech_key or not service_region:
+        print("Error: AZURE_SPEECH_KEY or AZURE_SPEECH_REGION not set in .env")
+        return
 
-        print(f"\nSummary:")
-        print(f"Total Standard Voices: {len(standard_voices)}")
-        print("\n".join(standard_voices))
-        
-        print(f"\nTotal Neural Voices: {len(neural_voices)}")
-        print("\n".join(neural_voices))
+    # 2. Configure Speech Config
+    speech_config = speechsdk.SpeechConfig(subscription=speech_key, region=service_region)
 
-    except Exception as e:
-        print(f"Error: {e}")
+    # 3. Create Synthesizer (to fetch voices)
+    synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=None)
+
+    # 4. Get Voices
+    print("Fetching available voices from Azure...")
+    result = synthesizer.get_voices_async().get()
+
+    if result.reason == speechsdk.ResultReason.VoicesListRetrieved:
+        print(f"\n--- Total Voices Found: {len(result.voices)} ---\n")
+        
+        # Categorize by Language
+        voices_by_lang = {}
+        for voice in result.voices:
+            lang = voice.locale
+            if lang not in voices_by_lang:
+                voices_by_lang[lang] = []
+            voices_by_lang[lang].append(f"{voice.local_name} ({voice.short_name}) - {voice.gender.name}")
+
+        # Print organized list
+        for lang, voices in sorted(voices_by_lang.items()):
+            print(f"LANGUAGE: {lang} ({len(voices)} voices)")
+            for v in sorted(voices):
+                print(f"  - {v}")
+            print("-" * 40)
+
+    elif result.reason == speechsdk.ResultReason.Canceled:
+        print(f"Error fetching voices: {result.error_details}")
 
 if __name__ == "__main__":
-    check_indian_voices()
+    list_voices()

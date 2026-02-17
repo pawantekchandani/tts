@@ -44,18 +44,22 @@ if "charset=utf8mb4" not in DATABASE_URL:
 logger.info("Database URL loaded successfully (Password hidden).")
 
 try:
+    connect_args = {}
+    if "mysql" in DATABASE_URL:
+        connect_args = {
+            "charset": "utf8mb4", 
+            "collation": "utf8mb4_unicode_ci",
+            "init_command": "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci"
+        }
+
     # 3. THE MAGIC FIX: init_command
-    # We pass 'init_command' inside connect_args. 
+    # We pass 'init_command' inside connect_args for MySQL. 
     # This runs AUTOMATICALLY at the driver level, guaranteed.
     engine = create_engine(
         DATABASE_URL,
         pool_pre_ping=True,
         pool_recycle=3600,
-        connect_args={
-            "charset": "utf8mb4", 
-            "collation": "utf8mb4_unicode_ci",
-            "init_command": "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci"
-        }
+        connect_args=connect_args
     )
 
     # Test connection immediately
