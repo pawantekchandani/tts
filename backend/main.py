@@ -32,8 +32,8 @@ from database import engine, Base, get_db
 from models import User, Conversion, PasswordReset, Transaction, PlanLimits, DownloadHistory
 from schemas import UserCreate, UserOut, Token, ForgotPasswordRequest, ResetPasswordRequest, PlanLimitUpdate, UserProfile
 from auth import hash_password, verify_password, create_access_token, generate_user_id
-import azure.cognitiveservices.speech as speechsdk
-# Azure Speech SDK imported
+# import azure.cognitiveservices.speech as speechsdk  <-- REMOVED TO FIX GLIBC ERROR
+# Azure Speech SDK NOT used directly to support older Linux versions
 import uuid
 from fastapi.staticfiles import StaticFiles
 from fastapi.staticfiles import StaticFiles
@@ -105,20 +105,7 @@ async def log_requests(request: Request, call_next):
             content={"detail": "Internal Server Error. Please check logs/Sentry."}
         )
 
-# Azure Speech Configuration
-try:
-    speech_key = os.getenv("AZURE_SPEECH_KEY")
-    service_region = os.getenv("AZURE_SPEECH_REGION")
-
-    if not speech_key or not service_region:
-        raise ValueError("Azure Speech Key or Region not found in environment variables")
-
-    speech_config = speechsdk.SpeechConfig(subscription=speech_key, region=service_region)
-    speech_config.set_speech_synthesis_output_format(speechsdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3)
-    logger.info("Azure Speech Config initialized successfully.")
-except Exception as e:
-    logger.error(f"Failed to initialize Azure Speech Config: {e}")
-    speech_config = None
+# Azure Speech Config initialization removed (REST API used)
 
 app.add_middleware(
     CORSMiddleware,
@@ -375,9 +362,7 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
     if not conversion.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
     
-    # Check if Azure config is ready
-    if not speech_config:
-         raise HTTPException(status_code=500, detail="Azure Speech Service unavailable")
+    # Azure Speech Config check removed (using REST API now)
 
     # Check Plan Limits
     chars = len(conversion.text)
@@ -386,11 +371,62 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
         raise HTTPException(status_code=403, detail=limit_check['reason'])
 
     try:
-        # Default voice if not provided
-        voice_name = conversion.voice_id or "en-US-JennyNeural"
-        speech_config.speech_synthesis_voice_name = voice_name
+        # --- REST API IMPLEMENTATION (GLIBC SAFE) ---
+        import requests
+
+        speech_key = os.getenv("AZURE_SPEECH_KEY")
+        service_region = os.getenv("AZURE_SPEECH_REGION")
         
+        if not speech_key or not service_region:
+             raise HTTPException(status_code=500, detail="Azure Configuration Error")
+
+        # 1. Get Access Token
+        token_url = f"https://{service_region}.api.cognitive.microsoft.com/sts/v1.0/issueToken"
+        headers = {
+            "Ocp-Apim-Subscription-Key": speech_key
+        }
+        try:
+            token_response = requests.post(token_url, headers=headers)
+            token_response.raise_for_status()
+            access_token = token_response.text
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to get Azure Token: {e}")
+            raise HTTPException(status_code=500, detail="Text-to-Speech Service Unavailable")
+
+        # 2. Define Helper for TTS Request
+        def text_to_speech_rest(text_chunk, voice_name_param, output_file):
+            tts_url = f"https://{service_region}.tts.speech.microsoft.com/cognitiveservices/v1"
+            
+            # Construct SSML
+            ssml = f"""
+            <speak version='1.0' xml:lang='en-US'>
+                <voice xml:lang='en-US' xml:gender='Female' name='{voice_name_param}'>
+                    {text_chunk}
+                </voice>
+            </speak>
+            """
+            
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/ssml+xml",
+                "X-Microsoft-OutputFormat": "audio-16khz-128kbitrate-mono-mp3",
+                "User-Agent": "PollyGlot"
+            }
+            
+            response = requests.post(tts_url, headers=headers, data=ssml.encode('utf-8'))
+            
+            if response.status_code == 200:
+                with open(output_file, 'wb') as audio:
+                    audio.write(response.content)
+                return True
+            else:
+                logger.error(f"TTS REST Error {response.status_code}: {response.text}")
+                if response.status_code == 429:
+                     raise HTTPException(status_code=429, detail="Service limit reached. Try again later.")
+                return False
+
         # Determine output path
+        voice_name = conversion.voice_id or "en-US-JennyNeural"
         now = datetime.now()
         month_year = now.strftime("%B-%Y")
         user_folder = str(current_user.id)
@@ -410,55 +446,37 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
                 if not chunk.strip():
                     continue
                 
-                # Create a temporary file for each chunk
                 temp_filename = f"temp_{current_user.id}_{i}_{now.timestamp()}.mp3"
                 temp_path = audio_base_path / temp_filename
-
-                # Use File Output (Avoids 0-byte issues on headless servers)
-                audio_config = speechsdk.audio.AudioConfig(filename=str(temp_path))
-                synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=audio_config)
-
-                result = synthesizer.speak_text_async(chunk).get()
                 
-                if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+                # CALL REST API
+                success = text_to_speech_rest(chunk, voice_name, str(temp_path))
+                
+                if success:
                     try:
-                        # Load processed audio from file
                         chunk_audio = AudioSegment.from_file(str(temp_path), format="mp3")
                         combined_audio += chunk_audio
                         logger.info(f"Processed chunk {i+1}/{len(chunks)}")
                     except Exception as e:
-                        logger.error(f"Error processing chunk audio: {e}")
+                         logger.error(f"Error merging chunk: {e}")
                     finally:
-                        # Cleanup temp file
                         if temp_path.exists():
                             try:
                                 os.remove(temp_path)
                             except:
                                 pass
-                                
-                elif result.reason == speechsdk.ResultReason.Canceled:
-                    cancellation_details = result.cancellation_details
-                    logger.error(f"Azure Speech Error: {cancellation_details.reason}, {cancellation_details.error_details}")
-                    raise Exception(f"Speech synthesis canceled: {cancellation_details.error_details}")
+                else:
+                    raise Exception("Failed to convert chunk via API")
 
             combined_audio.export(str(file_path), format="mp3")
             
         else:
             # --- SINGLE CALL ---
-            # Output directly to file (Avoids 0-byte issues on headless servers)
-            audio_config = speechsdk.audio.AudioConfig(filename=str(file_path))
-            synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=audio_config)
-
-            result = synthesizer.speak_text_async(conversion.text).get()
-            
-            if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+            success = text_to_speech_rest(conversion.text, voice_name, str(file_path))
+            if success:
                 logger.info(f"Conversion successful. Audio saved at: {file_path}")
-            elif result.reason == speechsdk.ResultReason.Canceled:
-                cancellation_details = result.cancellation_details
-                logger.error(f"Azure Speech Error: {cancellation_details.reason}, {cancellation_details.error_details}")
-                if "429" in str(cancellation_details.error_details):
-                     raise HTTPException(status_code=429, detail="Azure Service limit reached. Please try again later.")
-                raise Exception(f"Speech synthesis canceled: {cancellation_details.error_details}")
+            else:
+                 raise HTTPException(status_code=500, detail="Failed to generate audio")
             
         audio_url = f"/static/audio/{month_year}/{user_folder}/{filename}"
         
