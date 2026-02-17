@@ -178,8 +178,10 @@ export default function Home({ onNavigate, userPlan, isLoggedIn = false }) {
 
                                         <button
                                             onClick={() => {
-                                                authAPI.logout();
-                                                window.location.reload();
+                                                if (window.confirm("Are you sure you want to logout?")) {
+                                                    authAPI.logout();
+                                                    window.location.reload();
+                                                }
                                             }}
                                             className="w-full flex items-center justify-center gap-2 py-2 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
                                         >

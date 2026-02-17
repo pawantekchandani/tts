@@ -15,17 +15,18 @@ export const axiosInstance = axios.create({
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response && error.response.status === 401) {
-      // Ignore 401s from login endpoint (they are just wrong credentials)
-      if (error.config.url.includes('/login')) {
-        return Promise.reject(error);
-      }
+    // Only handle 401s that are NOT from the login endpoint itself
+    if (error.response && error.response.status === 401 && !error.config.url.includes('/login')) {
 
       // Token expired or invalid -> Logout user
       localStorage.removeItem('access_token');
       localStorage.removeItem('user_email');
       localStorage.removeItem('conversionHistory');
-      // Redirect to login (App.jsx will see no token and show Login)
+
+      // Set a flag so the Login page knows to show the "Session Expired" toast
+      localStorage.setItem('session_expired', 'true');
+
+      // Redirect to login
       window.location.href = '/';
     }
     return Promise.reject(error);
