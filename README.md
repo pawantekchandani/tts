@@ -14,6 +14,8 @@
 - **Admin Dashboard**: Real-time stats on user growth, earnings, and plan usage, plus the ability to modify plan limits dynamically.
 - **History Tracking**: Download history and usage analytics.
 - **Rich User Interface**: Modern, responsive UI built with React, Vite, and TailwindCSS, featuring smooth animations via Framer Motion.
+- **Automated CI/CD**: Fully automated deployment pipeline using **GitLab CI/CD**, delivering code to production on every push to the main branch.
+- **Real-time Monitoring**: Integrated with **Sentry** to capture runtime errors instantly and notify the developer via email for rapid debugging.
 
 ---
 
@@ -145,6 +147,24 @@ One of the standout features of Neural Voice Studio is its ability to handle imm
 | `/api/download/{id}` | GET | Download specific audio file |
 | `/api/admin/stats` | GET | Global system statistics (Admin only) |
 | `/api/admin/plans` | PUT | Update plan limits (Admin only) |
+
+---
+
+## 🚀 CI/CD & Deployment
+
+This project uses a robust **GitLab CI/CD** pipeline for automated testing and deployment:
+- **Build Stage**: Frontend is automatically built using Node.js 18.
+- **Deploy Stage**: Verified code is automatically deployed to the production server (**MilesWeb**) via LFTP.
+- **Notifications**: GitLab sends automated email notifications for every build, informing if the deployment was **Successful** or **Failed**.
+
+---
+
+## 🛡️ Error Monitoring & Sentry
+
+For production stability, we use **Sentry** for real-time error tracking:
+- **Runtime Error Detection**: Any backend exception is instantly captured by Sentry.
+- **Instant Alerts**: Sentry sends an immediate email notification with a full traceback whenever a critical error occurs in the production environment.
+- **Traceability**: Every error includes request details, helping to identify and fix bugs before they affect more users.
 
 ---
 
