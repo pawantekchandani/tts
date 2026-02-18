@@ -54,7 +54,7 @@ export default function Register({ onSuccess, onSwitchToLogin }) {
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
       <div className="bg-gray-900 rounded-lg shadow-2xl p-8 w-full max-w-md border border-gray-800">
-        <h2 className="text-3xl font-bold text-center text-orange-500 mb-8">Register</h2>
+        <h2 className="text-3xl font-bold text-center text-green-500 mb-8">Register</h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
