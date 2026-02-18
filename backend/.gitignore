@@ -3,3 +3,4 @@ static/audio/
 .env
 .DS_Store
 *.pyc
+venv/

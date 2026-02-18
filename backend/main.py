@@ -19,7 +19,35 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 env_path = Path(__file__).parent / ".env"
-load_dotenv(dotenv_path=env_path)
+
+# Robust .env loading
+try:
+    cwd = Path(os.getcwd())
+    paths = [
+        env_path,
+        cwd / ".env",
+        cwd / "backend" / ".env"
+    ]
+    
+    loaded = False
+    for p in paths:
+        if p.exists():
+            print(f"Loading .env from: {p}")
+            load_dotenv(dotenv_path=p, override=True)
+            loaded = True
+            break
+            
+    if not loaded:
+        print("CRITICAL: .env file not found in any expected location!")
+        
+except Exception as e:
+    print(f"Error loading .env: {e}")
+
+# Verify immediately
+if not os.getenv("AZURE_SPEECH_KEY"):
+    print("WARNING: AZURE_SPEECH_KEY not found after loading .env")
+else:
+    print("SUCCESS: AZURE_SPEECH_KEY loaded.")
 
 import sentry_sdk
 import logging
@@ -35,7 +63,6 @@ from auth import hash_password, verify_password, create_access_token, generate_u
 # import azure.cognitiveservices.speech as speechsdk  <-- REMOVED TO FIX GLIBC ERROR
 # Azure Speech SDK NOT used directly to support older Linux versions
 import uuid
-from fastapi.staticfiles import StaticFiles
 from fastapi.staticfiles import StaticFiles
 from schemas import ConversionCreate, ConversionOut
 from datetime import datetime, timedelta
@@ -377,7 +404,17 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
         speech_key = os.getenv("AZURE_SPEECH_KEY")
         service_region = os.getenv("AZURE_SPEECH_REGION")
         
+        # DEBUG: Log to main logger
+        logger.info(f"DEBUG: Key Present: {bool(speech_key)}, Region: {service_region}")
+        if not speech_key:
+             try:
+                 az_keys = [k for k in os.environ.keys() if 'AZURE' in k]
+                 logger.info(f"DEBUG: Available AZURE env vars: {az_keys}")
+             except:
+                 pass
+
         if not speech_key or not service_region:
+             logger.error(f"AZURE CONFIGURATION MISSING. Key: {bool(speech_key)}, Region: {service_region}")
              raise HTTPException(status_code=500, detail="Azure Configuration Error")
 
         # 1. Get Access Token
