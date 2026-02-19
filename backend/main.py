@@ -1,12 +1,13 @@
 import os
 import sys
+import boto3
 
 if os.name != 'nt':
     # 1. FORCE SYSTEM PATHS AT THE OS LEVEL (Linux/Server only)
     os.environ["PATH"] += os.pathsep + "/home/rseivuhw/bin"
 
 from pydub import AudioSegment
-# Set specific paths as backup for Linux
+# Set specific paths as backup for Linux 
 if os.name != 'nt':
     AudioSegment.converter = "/home/rseivuhw/bin/ffmpeg"
     AudioSegment.ffprobe = "/home/rseivuhw/bin/ffprobe"
@@ -389,52 +390,41 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
     if not conversion.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
     
-    # Azure Speech Config check removed (using REST API now)
-
     # Check Plan Limits
     chars = len(conversion.text)
     limit_check = check_user_limits(current_user.id, db, chars)
     if not limit_check['allowed']:
         raise HTTPException(status_code=403, detail=limit_check['reason'])
 
-    try:
-        # --- REST API IMPLEMENTATION (GLIBC SAFE) ---
-        import requests
+    # Determine Engine
+    engine_type = conversion.engine.lower() if conversion.engine else "neural"
+    
+    # Define TTS Converter Function Placeholder
+    convert_single_chunk = None
 
+    # --- AZURE IMPLEMENTATION ---
+    if engine_type == "neural":
+        import requests
         speech_key = os.getenv("AZURE_SPEECH_KEY")
         service_region = os.getenv("AZURE_SPEECH_REGION")
-        
-        # DEBUG: Log to main logger
-        logger.info(f"DEBUG: Key Present: {bool(speech_key)}, Region: {service_region}")
-        if not speech_key:
-             try:
-                 az_keys = [k for k in os.environ.keys() if 'AZURE' in k]
-                 logger.info(f"DEBUG: Available AZURE env vars: {az_keys}")
-             except:
-                 pass
 
         if not speech_key or not service_region:
              logger.error(f"AZURE CONFIGURATION MISSING. Key: {bool(speech_key)}, Region: {service_region}")
              raise HTTPException(status_code=500, detail="Azure Configuration Error")
 
-        # 1. Get Access Token
+        # Get Access Token
         token_url = f"https://{service_region}.api.cognitive.microsoft.com/sts/v1.0/issueToken"
-        headers = {
-            "Ocp-Apim-Subscription-Key": speech_key
-        }
+        headers = { "Ocp-Apim-Subscription-Key": speech_key }
         try:
             token_response = requests.post(token_url, headers=headers)
             token_response.raise_for_status()
             access_token = token_response.text
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to get Azure Token: {e}")
-            raise HTTPException(status_code=500, detail="Text-to-Speech Service Unavailable")
+            raise HTTPException(status_code=500, detail="Text-to-Speech Service Unavailable (Azure)")
 
-        # 2. Define Helper for TTS Request
-        def text_to_speech_rest(text_chunk, voice_name_param, output_file):
+        def azure_tts(text_chunk, voice_name_param, output_file):
             tts_url = f"https://{service_region}.tts.speech.microsoft.com/cognitiveservices/v1"
-            
-            # Construct SSML
             ssml = f"""
             <speak version='1.0' xml:lang='en-US'>
                 <voice xml:lang='en-US' xml:gender='Female' name='{voice_name_param}'>
@@ -442,28 +432,62 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
                 </voice>
             </speak>
             """
-            
             headers = {
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/ssml+xml",
                 "X-Microsoft-OutputFormat": "audio-16khz-128kbitrate-mono-mp3",
                 "User-Agent": "PollyGlot"
             }
-            
             response = requests.post(tts_url, headers=headers, data=ssml.encode('utf-8'))
-            
             if response.status_code == 200:
                 with open(output_file, 'wb') as audio:
                     audio.write(response.content)
                 return True
             else:
                 logger.error(f"TTS REST Error {response.status_code}: {response.text}")
-                if response.status_code == 429:
-                     raise HTTPException(status_code=429, detail="Service limit reached. Try again later.")
                 return False
+        
+        convert_single_chunk = azure_tts
 
-        # Determine output path
-        voice_name = conversion.voice_id or "en-US-JennyNeural"
+    # --- AWS POLLY IMPLEMENTATION ---
+    elif engine_type == "standard":
+        # Check AWS Credentials Existence
+        if not os.getenv("AWS_ACCESS_KEY_ID") and not os.getenv("AWS_PROFILE"):
+             logger.warning("AWS Credentials might be missing. Proceeding with boto3 defaults.")
+
+        def aws_tts(text_chunk, voice_name_param, output_file):
+            try:
+                # explicitly get region
+                aws_region = os.getenv("AWS_REGION", "us-east-1")
+                
+                # Use default Boto3 session (checks env vars, config files, etc.)
+                polly_client = boto3.client('polly', region_name=aws_region)
+                
+                response = polly_client.synthesize_speech(
+                    Text=text_chunk,
+                    OutputFormat='mp3',
+                    VoiceId=voice_name_param,
+                    Engine='standard'
+                )
+                
+                if "AudioStream" in response:
+                    with open(output_file, 'wb') as file:
+                        file.write(response['AudioStream'].read())
+                    return True
+                return False
+            except Exception as e:
+                logger.error(f"AWS Polly Error: {e}")
+                return False
+        
+        convert_single_chunk = aws_tts
+        
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported engine: {engine_type}")
+
+
+    try:
+        # Determine output path (Shared Logic)
+        voice_name = conversion.voice_id or ("en-US-JennyNeural" if engine_type == "neural" else "Joanna")
         now = datetime.now()
         month_year = now.strftime("%B-%Y")
         user_folder = str(current_user.id)
@@ -486,8 +510,8 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
                 temp_filename = f"temp_{current_user.id}_{i}_{now.timestamp()}.mp3"
                 temp_path = audio_base_path / temp_filename
                 
-                # CALL REST API
-                success = text_to_speech_rest(chunk, voice_name, str(temp_path))
+                # CALL ENGINE API
+                success = convert_single_chunk(chunk, voice_name, str(temp_path))
                 
                 if success:
                     try:
@@ -509,7 +533,7 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
             
         else:
             # --- SINGLE CALL ---
-            success = text_to_speech_rest(conversion.text, voice_name, str(file_path))
+            success = convert_single_chunk(conversion.text, voice_name, str(file_path))
             if success:
                 logger.info(f"Conversion successful. Audio saved at: {file_path}")
             else:
@@ -531,6 +555,7 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
         
         return ConversionOut(
             id=db_conversion.id, text=db_conversion.text, voice_name=db_conversion.voice_name,
+            engine=engine_type, # Add engine to output
             audio_url=audio_url, created_at=db_conversion.created_at.isoformat()
         )
     except HTTPException as e:

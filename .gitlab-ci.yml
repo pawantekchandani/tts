@@ -22,7 +22,7 @@ deploy_to_milesweb:
     - lftp -e "set ftp:ssl-allow no; open $FTP_SERVER; user $FTP_USERNAME $FTP_PASSWORD; 
       mirror -R frontend/dist/ tts.testingprojects.online/;
       mirror -R backend/ tts_app/backend/; 
-      put requirements.txt -o tts_app/requirements.txt; 
+      put backend/requirements.txt -o tts_app/requirements.txt; 
       put passenger_wsgi.py -o tts_app/passenger_wsgi.py;
       mkdir -p tts_app/backend/tmp;
       put -E /dev/null -o tts_app/backend/tmp/restart.txt;

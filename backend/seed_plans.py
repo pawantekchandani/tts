@@ -1,56 +1,41 @@
-from database import SessionLocal, engine
-from models import Base, PlanLimits
 from sqlalchemy.orm import Session
+from database import SessionLocal
+from models import PlanLimits
+import logging
 
-def seed_plans(db: Session = None):
+logger = logging.getLogger(__name__)
+
+def seed_plans():
     """
-    Populates the database with default PlanLimits if they don't exist.
+    Seeds the database with default plan limits if they do not exist.
     """
-    # If run as standalone, create a session
-    standalone = False
-    if db is None:
-        db = SessionLocal()
-        standalone = True
-        
-    # Ensure table exists (safe to call even if exists)
-    Base.metadata.create_all(bind=engine)
-
-    plans_data = [
-        {"plan_name": "Basic", "credit_limit": 3000, "history_days": 7},
-        {"plan_name": "Pro", "credit_limit": 10000, "history_days": 30},
-        {"plan_name": "Plus", "credit_limit": 30000, "history_days": 9999},
-    ]
-
+    db: Session = SessionLocal()
     try:
-        print("Checking Plan Limits...")
-        for data in plans_data:
-            existing_plan = db.query(PlanLimits).filter(PlanLimits.plan_name == data["plan_name"]).first()
-            
+        # Define default plans
+        plans = [
+            {"plan_name": "Free", "credit_limit": 1000, "history_days": 7},
+            {"plan_name": "Basic", "credit_limit": 1000, "history_days": 7}, # Alias for Free?
+            {"plan_name": "Pro", "credit_limit": 10000, "history_days": 30},
+            {"plan_name": "Plus", "credit_limit": 50000, "history_days": 90}
+        ]
+
+        for plan_data in plans:
+            existing_plan = db.query(PlanLimits).filter(PlanLimits.plan_name == plan_data["plan_name"]).first()
             if not existing_plan:
-                print(f"Adding new plan: {data['plan_name']}")
-                new_plan = PlanLimits(**data)
+                new_plan = PlanLimits(**plan_data)
                 db.add(new_plan)
+                logger.info(f"Seeded plan: {plan_data['plan_name']}")
             else:
-                # Update existing plan values (optional, but good for keeping in sync)
-                updated = False
-                for key, value in data.items():
-                    if getattr(existing_plan, key) != value:
-                        setattr(existing_plan, key, value)
-                        updated = True
-                if updated:
-                    print(f"Updated plan: {data['plan_name']}")
-                else:
-                    print(f"Plan safe: {data['plan_name']}")
-
+                # Optional: Update existing plan limits if they changed
+                pass
+        
         db.commit()
-        print("Plan seeding complete.")
-
     except Exception as e:
-        print(f"Error seeding plans: {e}")
+        logger.error(f"Failed to seed plans: {e}")
         db.rollback()
     finally:
-        if standalone:
-            db.close()
+        db.close()
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     seed_plans()
