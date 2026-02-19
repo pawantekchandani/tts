@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import toWav from 'audiobuffer-to-wav';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LogOut, Play, Download, Loader, Sparkles, FileText, Music, Trash2, Maximize2, X, ChevronRight } from 'lucide-react';
+import { LogOut, Play, Download, Loader, Sparkles, FileText, Music, Trash2, Maximize2, X, ChevronRight, ChevronDown, Filter, Search, Check, Mic } from 'lucide-react';
 import { authAPI, axiosInstance as axios } from '../api/auth';
-import VoiceSelector from './VoiceSelector';
 import AudioVisualizer from './AudioVisualizer';
 import ChatHistory from './ChatHistory';
+import { getAllVoicesFlat } from '../data/voiceData';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:8000`;
 
@@ -18,8 +18,10 @@ export default function Dashboard({ userPlan, onNavigate }) {
 
   // Local state
   const [text, setText] = useState('');
-  const [voice, setVoice] = useState(null);
-  const [engine, setEngine] = useState('neural');
+  const [voice, setVoice] = useState(null); // Stores voice ID
+  // engine state is derived from selected voice or can be auto-selected. 
+  // However, the conversion API requires 'engine'. We'll derive it from the selected voice object.
+
   const [isLoading, setIsLoading] = useState(false);
   const [audioUrl, setAudioUrl] = useState(null);
   const [currentConversionId, setCurrentConversionId] = useState(null);
@@ -33,6 +35,58 @@ export default function Dashboard({ userPlan, onNavigate }) {
   const [creditsUsed, setCreditsUsed] = useState(0);
   const [creditLimit, setCreditLimit] = useState(0);
   const audioRef = useRef(null);
+
+  // --- DROPDOWN STATE ---
+  const [isVoiceOpen, setIsVoiceOpen] = useState(false);
+  const [voiceDropdownSearch, setVoiceDropdownSearch] = useState('');
+
+  // --- FILTERS STATE ---
+  const [languageSearch, setLanguageSearch] = useState('');
+  const [selectedEngines, setSelectedEngines] = useState(new Set(['neural'])); // Default to Neural
+  const [selectedGenders, setSelectedGenders] = useState(new Set(['Female', 'Male']));
+
+  // --- VOICE DATA ---
+  const allVoices = useMemo(() => getAllVoicesFlat(), []);
+
+  // Computed Filtered Voices
+  const filteredVoices = useMemo(() => {
+    return allVoices.filter(v => {
+      // 1. Language Search
+      const matchLang = v.lang.toLowerCase().includes(languageSearch.toLowerCase()) ||
+        v.name.toLowerCase().includes(languageSearch.toLowerCase());
+
+      // 2. Engine Filter
+      // Note: 'neural' matches Azure Neural. 'standard' matches AWS Polly (Standard).
+      // We check if the voice's engine is in the selected set.
+      const matchEngine = selectedEngines.has(v.engine);
+
+      // 3. Gender Filter
+      const matchGender = selectedGenders.has(v.gender);
+
+      return matchLang && matchEngine && matchGender;
+    });
+  }, [allVoices, languageSearch, selectedEngines, selectedGenders]);
+
+  // Handle Voice Selection
+  const handleVoiceSelect = (voiceId) => {
+    setVoice(voiceId);
+  };
+
+  // Toggle Filters
+  const toggleEngine = (engine) => {
+    const newSet = new Set(selectedEngines);
+    if (newSet.has(engine)) newSet.delete(engine);
+    else newSet.add(engine);
+    // Prevent empty set? Maybe. user might want to clear all.
+    setSelectedEngines(newSet);
+  };
+
+  const toggleGender = (gender) => {
+    const newSet = new Set(selectedGenders);
+    if (newSet.has(gender)) newSet.delete(gender);
+    else newSet.add(gender);
+    setSelectedGenders(newSet);
+  };
 
   useEffect(() => {
     fetchHistory(true);
@@ -50,8 +104,6 @@ export default function Dashboard({ userPlan, onNavigate }) {
       console.error("Failed to fetch user info:", err);
     }
   };
-
-  // Engine-voice sync removed to support detailed selection in VoiceSelector
 
   useEffect(() => {
     if (audioRef.current) {
@@ -75,7 +127,6 @@ export default function Dashboard({ userPlan, onNavigate }) {
       });
 
       const historyData = Array.isArray(response.data) ? response.data : [];
-      console.log(`Fetched history page ${targetPage}:`, historyData.length, "records");
 
       const formattedHistory = historyData.map(item => ({
         ...item,
@@ -130,16 +181,20 @@ export default function Dashboard({ userPlan, onNavigate }) {
   const handleConvert = async () => {
     if (!text || !voice) return;
 
-    // --- LANGUAGE VALIDATION ---
-    // Check if text contains Devanagari (Hindi) characters
-    const hasHindiChars = /[\u0900-\u097F]/.test(text);
+    // Get selected voice object to determine engine
+    const selectedVoiceObj = allVoices.find(v => v.id === voice);
+    if (!selectedVoiceObj) {
+      alert("Invalid voice selected");
+      return;
+    }
 
-    // Check if selected voice is an English voice (starts with 'en-')
-    const isEnglishVoice = voice.startsWith('en-');
+    // --- LANGUAGE VALIDATION ---
+    const hasHindiChars = /[\u0900-\u097F]/.test(text);
+    const isEnglishVoice = selectedVoiceObj.lang.includes('English'); // Check lang name instead of prefix
 
     if (hasHindiChars && isEnglishVoice) {
       alert("Oops! The voice 'Jenny (US)' (or other English voices) cannot read Hindi text. Please try selecting 'Swara (Hindi)' or 'Madhur (Hindi)' and try again.");
-      return; // Stop generation
+      return;
     }
     // ---------------------------
 
@@ -148,25 +203,18 @@ export default function Dashboard({ userPlan, onNavigate }) {
 
     try {
       const token = authAPI.getToken();
+
       const response = await axios.post(
         `${API_BASE_URL}/api/convert`,
-        { text, voice_id: voice, engine },
+        { text, voice_id: selectedVoiceObj.voice_id || voice, engine: selectedVoiceObj.engine }, // Pass derived engine
         {
           headers: { Authorization: `Bearer ${token}` },
-          timeout: 1800000 // 30 minutes
+          timeout: 1800000
         }
       );
 
-      // Add to history using the response data
       setCurrentConversionId(response.data.id);
 
-      const newHistoryItem = {
-        ...response.data,
-        voice: response.data.voice_name || voice, // Use backend voice name or local state
-        audio_url: response.data.audio_url // Ensure full URL if needed, though response might have relative
-      };
-
-      // Securely fetch the audio blob immediately so it's ready to play
       const secureUrl = await fetchSecureAudio(response.data.audio_url);
       if (secureUrl) {
         setAudioUrl(secureUrl);
@@ -174,9 +222,9 @@ export default function Dashboard({ userPlan, onNavigate }) {
 
       try {
         await fetchHistory(true);
-        await fetchUserInfo(); // Refresh credits
+        await fetchUserInfo();
       } catch (historyError) {
-        console.warn("Conversion successful, but failed to refresh history:", historyError);
+        console.warn("History refresh failed:", historyError);
       }
 
     } catch (error) {
@@ -187,6 +235,7 @@ export default function Dashboard({ userPlan, onNavigate }) {
       setIsLoading(false);
     }
   };
+
   const handleLogout = () => {
     if (window.confirm("Are you sure you want to logout?")) {
       authAPI.logout();
@@ -232,68 +281,266 @@ export default function Dashboard({ userPlan, onNavigate }) {
         </div>
       </nav >
 
-      {/* MAIN */}
-      < main className="max-w-6xl mx-auto px-4 py-6 sm:py-10" >
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
+      {/* MAIN LAYOUT (3 COLUMNS) */}
+      < main className="max-w-[1600px] mx-auto px-4 py-6 sm:py-8" >
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
-          {/* INPUT */}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <div className="bg-[#1e293b]/60 border border-white/10 rounded-2xl p-4 sm:p-8">
-              <h2 className="text-xl sm:text-2xl font-bold mb-4 flex items-center gap-2">
-                <FileText className="text-brand-blue" />
-                Text to Speech
-              </h2>
+          {/* LEFT COLUMN: FILTERS + HISTORY (4 COLS) */}
+          <div className="lg:col-span-4 space-y-6">
 
-              <div className="space-y-5">
-                <VoiceSelector
-                  selectedVoice={voice}
-                  onSelect={setVoice}
-                  selectedEngine={engine}
-                  onEngineChange={setEngine}
-                />
+            {/* 1. FILTERS SECTION */}
+            <div className="bg-[#1e293b]/60 border border-white/10 rounded-2xl p-5">
+              <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                <Filter className="w-5 h-5 text-brand-blue" />
+                Filters
+              </h3>
 
-                <div>
-                  <textarea
-                    value={text}
-                    onChange={e => setText(e.target.value)}
-                    placeholder="Enter text to convert into speech..."
-                    className="w-full h-32 sm:h-40 bg-black border border-white/10 rounded-xl p-3 sm:p-4 text-base sm:text-lg resize-none focus:ring-2 focus:ring-brand-purple"
+              {/* Language Search */}
+              <div className="mb-6">
+                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Search Language</label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
+                  <input
+                    type="text"
+                    value={languageSearch}
+                    onChange={(e) => setLanguageSearch(e.target.value)}
+                    placeholder="e.g. English, Hindi..."
+                    className="w-full bg-black/40 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-sm focus:ring-1 focus:ring-brand-blue outline-none"
                   />
-                  <div className="text-xs text-gray-400 mt-1 text-right">
-                    Credits Used: {creditsUsed} / {creditLimit}
-                  </div>
                 </div>
+              </div>
 
+              {/* Quality Checkboxes */}
+              <div className="mb-6">
+                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Quality (Engine)</label>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${selectedEngines.has('neural') ? 'bg-brand-blue border-brand-blue' : 'border-gray-600 group-hover:border-gray-400'}`}>
+                      {selectedEngines.has('neural') && <Check className="w-3 h-3 text-white" />}
+                    </div>
+                    <input type="checkbox" className="hidden" onChange={() => toggleEngine('neural')} checked={selectedEngines.has('neural')} />
+                    <span className="text-sm text-gray-300">Neural (Azure)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${selectedEngines.has('standard') ? 'bg-brand-blue border-brand-blue' : 'border-gray-600 group-hover:border-gray-400'}`}>
+                      {selectedEngines.has('standard') && <Check className="w-3 h-3 text-white" />}
+                    </div>
+                    <input type="checkbox" className="hidden" onChange={() => toggleEngine('standard')} checked={selectedEngines.has('standard')} />
+                    <span className="text-sm text-gray-300">Standard (AWS)</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Gender Checkboxes */}
+              <div>
+                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Gender</label>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${selectedGenders.has('Male') ? 'bg-brand-blue border-brand-blue' : 'border-gray-600 group-hover:border-gray-400'}`}>
+                      {selectedGenders.has('Male') && <Check className="w-3 h-3 text-white" />}
+                    </div>
+                    <input type="checkbox" className="hidden" onChange={() => toggleGender('Male')} checked={selectedGenders.has('Male')} />
+                    <span className="text-sm text-gray-300">Male</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${selectedGenders.has('Female') ? 'bg-brand-blue border-brand-blue' : 'border-gray-600 group-hover:border-gray-400'}`}>
+                      {selectedGenders.has('Female') && <Check className="w-3 h-3 text-white" />}
+                    </div>
+                    <input type="checkbox" className="hidden" onChange={() => toggleGender('Female')} checked={selectedGenders.has('Female')} />
+                    <span className="text-sm text-gray-300">Female</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. RECENT CONVERSIONS HISTORY (Moved Here) */}
+            <div className="bg-[#1e293b]/40 border border-white/5 rounded-2xl p-4">
+              <h3 className="text-lg font-semibold mb-3">Recent Conversions</h3>
+              {history.length === 0 && !loadingHistory ? (
+                <p className="text-gray-500 text-sm text-center py-6">
+                  No history yet
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {history.slice(0, 5).map(item => (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors cursor-pointer group"
+                      onClick={() => setSelectedItem(item)}
+                    >
+                      <div className="w-8 h-8 rounded-full bg-brand-blue/20 flex flex-shrink-0 items-center justify-center text-xs">
+                        <Play className="w-3 h-3 text-brand-blue" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm truncate font-medium text-gray-200">{item.text}</p>
+                        <p className="text-xs text-gray-500 flex items-center justify-between">
+                          <span>{item.voice}</span>
+                          <span>{new Date(item.created_at).toLocaleDateString()}</span>
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+
+                  <button
+                    onClick={() => setSearchParams({ view: 'history' })}
+                    className="w-full mt-2 py-2 text-xs text-brand-blue hover:text-white hover:bg-white/5 rounded-lg transition-colors flex items-center justify-center gap-2 border border-brand-blue/30"
+                  >
+                    See All History
+                    <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* RIGHT COLUMN: VOICE DROPDOWN & INPUT (8 COLS) */}
+          <div className="lg:col-span-8 space-y-6">
+
+            {/* Voice Selection Dropdown */}
+            <div className="bg-[#1e293b]/60 border border-white/10 rounded-2xl p-4 sm:p-6 relative z-30">
+              <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                <Mic className="w-5 h-5 text-brand-purple" />
+                Select Voice
+              </h3>
+
+              <div className="relative">
                 <button
-                  onClick={handleConvert}
-                  disabled={isLoading || !text || !voice}
-                  className={`w-full py-3 sm:py-4 rounded-xl font-bold flex justify-center items-center gap-2
-                    ${isLoading || !text || !voice
-                      ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                      : 'bg-gradient-to-r from-brand-blue to-brand-purple text-white shadow-lg shadow-brand-blue/20 hover:shadow-brand-blue/40 transition-shadow'}
-                  `}
+                  onClick={() => setIsVoiceOpen(!isVoiceOpen)}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl p-4 flex items-center justify-between hover:border-brand-purple/50 transition-colors text-left"
                 >
-                  {isLoading ? (
-                    <>
-                      <Loader className="animate-spin w-5 h-5" />
-                      Generating...
-                    </>
+                  {voice ? (
+                    (() => {
+                      const v = allVoices.find(fv => fv.id === voice);
+                      if (!v) return <span className="text-gray-400">Select a voice...</span>;
+                      return (
+                        <div className="flex items-center gap-3">
+                          <span className="text-2xl">{v.flag}</span>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-white">{v.name}</span>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wide 
+                                            ${v.engine === 'neural' ? 'bg-blue-500/20 text-blue-300' : 'bg-orange-500/20 text-orange-300'}`}>
+                                {v.engine === 'neural' ? 'Neural' : 'Std'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-400">{v.lang} • {v.style}</p>
+                          </div>
+                        </div>
+                      );
+                    })()
                   ) : (
-                    <>
-                      <Sparkles className="w-5 h-5" />
-                      Generate Mp3
-                    </>
+                    <span className="text-gray-400">Select a voice...</span>
                   )}
+                  <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${isVoiceOpen ? 'rotate-180' : ''}`} />
                 </button>
-              </div >
-            </div >
-          </motion.div >
 
-          {/* OUTPUT + HISTORY */}
-          < div className="space-y-6" >
+                {/* DROPDOWN MENU */}
+                <AnimatePresence>
+                  {isVoiceOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      className="absolute top-full left-0 right-0 mt-2 bg-[#1e293b] border border-white/10 rounded-xl shadow-2xl p-3 max-h-[400px] overflow-hidden flex flex-col"
+                    >
+                      {/* Inner Search */}
+                      <div className="relative mb-3 flex-shrink-0">
+                        <Search className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
+                        <input
+                          type="text"
+                          value={voiceDropdownSearch}
+                          onChange={(e) => setVoiceDropdownSearch(e.target.value)}
+                          placeholder="Search specific voice..."
+                          className="w-full bg-black/40 border border-white/10 rounded-lg pl-9 pr-3 py-2 text-sm focus:ring-1 focus:ring-brand-purple outline-none"
+                          autoFocus
+                        />
+                      </div>
 
-            {/* AUDIO */}
-            < AnimatePresence >
+                      <div className="overflow-y-auto custom-scrollbar flex-1 space-y-1 pr-1">
+                        {filteredVoices
+                          .filter(v =>
+                            !voiceDropdownSearch ||
+                            v.name.toLowerCase().includes(voiceDropdownSearch.toLowerCase()) ||
+                            v.style.toLowerCase().includes(voiceDropdownSearch.toLowerCase())
+                          )
+                          .map(v => (
+                            <button
+                              key={v.id}
+                              onClick={() => {
+                                handleVoiceSelect(v.id);
+                                setIsVoiceOpen(false);
+                                setVoiceDropdownSearch('');
+                              }}
+                              className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors
+                                            ${voice === v.id ? 'bg-brand-purple/20 border border-brand-purple/30' : 'hover:bg-white/5 border border-transparent'}
+                                        `}
+                            >
+                              <span className="text-xl flex-shrink-0">{v.flag}</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between">
+                                  <span className={`font-semibold ${voice === v.id ? 'text-white' : 'text-gray-300'}`}>{v.name}</span>
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wide 
+                                                    ${v.engine === 'neural' ? 'bg-blue-500/20 text-blue-300' : 'bg-orange-500/20 text-orange-300'}`}>
+                                    {v.engine === 'neural' ? 'Neural' : 'Std'}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-gray-500 truncate">{v.lang} • {v.style} • {v.gender}</p>
+                              </div>
+                              {voice === v.id && <Check className="w-4 h-4 text-brand-purple" />}
+                            </button>
+                          ))}
+                        {filteredVoices.length === 0 && (
+                          <div className="text-center text-gray-500 py-4 text-sm">No voices found</div>
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+
+            {/* Text Input Area */}
+            <div className="bg-[#1e293b]/60 border border-white/10 rounded-2xl p-4 sm:p-6">
+              <textarea
+                value={text}
+                onChange={e => setText(e.target.value)}
+                placeholder="Enter text to convert (select a voice above first)..."
+                className="w-full h-40 bg-black border border-white/10 rounded-xl p-4 text-lg resize-none focus:ring-2 focus:ring-brand-purple outline-none"
+              />
+              <div className="flex justify-between items-center mt-3">
+                <span className="text-xs text-gray-500">
+                  {text.length} characters
+                </span>
+                <span className="text-xs text-gray-400">
+                  Credits Used: {creditsUsed} / {creditLimit}
+                </span>
+              </div>
+
+              <button
+                onClick={handleConvert}
+                disabled={isLoading || !text || !voice}
+                className={`w-full mt-4 py-4 rounded-xl font-bold flex justify-center items-center gap-2 text-lg
+                      ${isLoading || !text || !voice
+                    ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-brand-blue to-brand-purple text-white shadow-lg shadow-brand-blue/20 hover:shadow-brand-blue/40 transition-shadow'}
+                    `}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader className="animate-spin w-5 h-5" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-5 h-5" />
+                    Generate Audio
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* AUDIO PLAYER (IF EXISTS) */}
+            <AnimatePresence>
               {audioUrl && (
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
@@ -411,95 +658,18 @@ export default function Dashboard({ userPlan, onNavigate }) {
                     Download MP3
                   </button>
                 </motion.div>
-              )
-              }
-            </AnimatePresence >
+              )}
+            </AnimatePresence>
 
-            {/* HISTORY */}
-            < div className="bg-[#1e293b]/40 border border-white/5 rounded-2xl p-4 sm:p-6" >
-              <h3 className="text-lg font-semibold mb-3">Recent Conversions</h3>
-
-              {
-                history.length === 0 && !loadingHistory ? (
-                  <p className="text-gray-500 text-sm text-center py-6">
-                    No history yet
-                  </p>
-                ) : (
-                  <div
-                    className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar"
-                    onScroll={(e) => {
-                      const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-                      if (scrollHeight - scrollTop <= clientHeight + 50 && hasMore && !loadingHistory) {
-                        fetchHistory(false);
-                      }
-                    }}
-                  >
-                    {history.slice(0, 5).map(item => (
-                      <div
-                        key={item.id}
-                        className="flex items-center gap-3 p-3 rounded-xl bg-white/5"
-                      >
-                        <div className="w-8 h-8 rounded-full bg-brand-blue/20 flex flex-shrink-0 items-center justify-center text-xs">
-                          MP3
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm truncate">{item.text}</p>
-                          <p className="text-xs text-gray-400">
-                            {item.voice} • {item.created_at}
-                          </p>
-                        </div>
-                        <button
-                          onClick={async () => {
-                            const secureUrl = await fetchSecureAudio(item.audio_url);
-                            if (secureUrl) {
-                              setAudioUrl(secureUrl);
-                              setCurrentConversionId(item.id);
-                            }
-                          }}
-                          className="p-2 rounded-lg bg-brand-blue/20 hover:bg-brand-blue/40 transition-colors"
-                          title="Play"
-                        >
-                          <Play className="w-4 h-4" />
-                        </button>
-
-                        <button
-                          onClick={() => setSelectedItem(item)}
-                          className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
-                          title="View Details"
-                        >
-                          <Maximize2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
-
-                    {loadingHistory && (
-                      <div className="py-4 flex justify-center">
-                        <Loader className="animate-spin w-5 h-5 text-brand-purple" />
-                      </div>
-                    )}
-
-                    {!loadingHistory && history.length > 0 && (
-                      <button
-                        onClick={() => setSearchParams({ view: 'history' })}
-                        className="w-full mt-4 py-2 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors flex items-center justify-center gap-2"
-                      >
-                        View All History
-                        <ChevronRight className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                )
-              }
-            </div >
-
-          </div >
-        </div >
+          </div>
+        </div>
       </main >
 
-      {/* HISTORY MODAL */}
+      {/* HISTORY MODAL (Keep as overlay if needed) */}
       < AnimatePresence >
         {showHistoryModal && (
           <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex justify-end">
+            {/* ... (Existing modal content) ... */}
             <motion.div
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
@@ -547,8 +717,8 @@ export default function Dashboard({ userPlan, onNavigate }) {
                     <p className="font-semibold">{selectedItem.voice}</p>
                   </div>
                   <div className="bg-white/5 p-3 rounded-xl">
-                    <label className="text-xs text-gray-400">Date</label>
-                    <p className="font-semibold">{selectedItem.created_at}</p>
+                    <label className="text-xs text-gray-400">Engine</label>
+                    <p className="font-semibold">{selectedItem.engine || 'Unknown'}</p>
                   </div>
                 </div>
 
