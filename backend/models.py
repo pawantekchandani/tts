@@ -23,6 +23,7 @@ class Conversion(Base):
     
     # FIXED: Changed from 'Text' to 'UnicodeText' to fix the '????' issue
     text = Column(UnicodeText)
+    style_degree = Column(Float, default=1.0)
     
     voice_name = Column(String(100), default="Joanna")
     audio_url = Column(String(500), nullable=True)
