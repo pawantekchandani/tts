@@ -83,14 +83,14 @@ export default function Dashboard({ userPlan, onNavigate }) {
               {selectedEngines.has('neural') && <Check className="w-3 h-3 text-white" />}
             </div>
             <input type="checkbox" className="hidden" onChange={() => toggleEngine('neural')} checked={selectedEngines.has('neural')} />
-            <span className="text-sm text-gray-300">Neural (Azure)</span>
+            <span className="text-sm text-gray-300">Human Voice</span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer group">
             <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${selectedEngines.has('standard') ? 'bg-brand-blue border-brand-blue' : 'border-gray-600 group-hover:border-gray-400'}`}>
               {selectedEngines.has('standard') && <Check className="w-3 h-3 text-white" />}
             </div>
             <input type="checkbox" className="hidden" onChange={() => toggleEngine('standard')} checked={selectedEngines.has('standard')} />
-            <span className="text-sm text-gray-300">Standard (AWS)</span>
+            <span className="text-sm text-gray-300">Standard</span>
           </label>
         </div>
       </div>
@@ -977,23 +977,7 @@ export default function Dashboard({ userPlan, onNavigate }) {
                     onEnded={() => setIsPlaying(false)}
                   />
 
-                  {/* Playback Speed Control */}
-                  <div className="mt-4 bg-black/40 p-4 rounded-xl border border-white/5 space-y-2">
-                    <div className="flex justify-between items-center text-xs text-brand-gray font-medium uppercase tracking-wider">
-                      <span>Slower (0.5x)</span>
-                      <span className="text-white bg-brand-blue/20 px-2 py-1 rounded-md">Speed: {speed}x</span>
-                      <span>Faster (2.0x)</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0.5"
-                      max="2.0"
-                      step="0.1"
-                      value={speed}
-                      onChange={(e) => setSpeed(parseFloat(e.target.value))}
-                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-brand-blue hover:accent-brand-lightBlue transition-all"
-                    />
-                  </div>
+
 
                   <button
                     onClick={async () => {
