@@ -1,5 +1,5 @@
 from pydantic import BaseModel, validator
-from typing import Optional
+from typing import Optional, Dict, Any
 import re
 
 class UserCreate(BaseModel):
@@ -47,6 +47,9 @@ class ConversionCreate(BaseModel):
     text: str
     voice_id: str = "Joanna" # Default voice
     engine: str = "neural" # Default engine
+    style: Optional[str] = None
+    style_degree: Optional[float] = 1.0
+    prosody: Optional[Dict[str, Any]] = None
 
 class ConversionOut(BaseModel):
     id: int

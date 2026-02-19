@@ -2,11 +2,14 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import toWav from 'audiobuffer-to-wav';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LogOut, Play, Download, Loader, Sparkles, FileText, Music, Trash2, Maximize2, X, ChevronRight, ChevronDown, Filter, Search, Check, Mic } from 'lucide-react';
+import { LogOut, Play, Download, Loader, Sparkles, FileText, Music, Trash2, Maximize2, X, ChevronRight, ChevronDown, Filter, Search, Check, Mic, Sliders, Settings, Clock, Menu } from 'lucide-react';
 import { authAPI, axiosInstance as axios } from '../api/auth';
 import AudioVisualizer from './AudioVisualizer';
 import ChatHistory from './ChatHistory';
 import { getAllVoicesFlat } from '../data/voiceData';
+import FloatingSelectionMenu from './FloatingSelectionMenu';
+import MoodHighlightOverlay from './MoodHighlightOverlay';
+import { getSelectionCoords } from '../utils/textUtils';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:8000`;
 
@@ -40,6 +43,159 @@ export default function Dashboard({ userPlan, onNavigate }) {
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
   const [voiceDropdownSearch, setVoiceDropdownSearch] = useState('');
 
+  // --- ADVANCED EDITOR STATE ---
+  const textareaRef = useRef(null);
+  const [selectionRange, setSelectionRange] = useState({ start: 0, end: 0 });
+  const [isStyleMenuOpen, setIsStyleMenuOpen] = useState(false);
+  const [isBreakMenuOpen, setIsBreakMenuOpen] = useState(false);
+  const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Helper to render filters (used in both Sidebar and Mobile Drawer)
+  const renderFilters = () => (
+    <>
+      <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+        <Filter className="w-5 h-5 text-brand-blue" />
+        Filters
+      </h3>
+
+      {/* Language Search */}
+      <div className="mb-6">
+        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Search Language</label>
+        <div className="relative">
+          <Search className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
+          <input
+            type="text"
+            value={languageSearch}
+            onChange={(e) => setLanguageSearch(e.target.value)}
+            placeholder="e.g. English, Hindi..."
+            className="w-full bg-black/40 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-sm focus:ring-1 focus:ring-brand-blue outline-none"
+          />
+        </div>
+      </div>
+
+      {/* Quality Checkboxes */}
+      <div className="mb-6">
+        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Quality (Engine)</label>
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 cursor-pointer group">
+            <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${selectedEngines.has('neural') ? 'bg-brand-blue border-brand-blue' : 'border-gray-600 group-hover:border-gray-400'}`}>
+              {selectedEngines.has('neural') && <Check className="w-3 h-3 text-white" />}
+            </div>
+            <input type="checkbox" className="hidden" onChange={() => toggleEngine('neural')} checked={selectedEngines.has('neural')} />
+            <span className="text-sm text-gray-300">Neural (Azure)</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer group">
+            <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${selectedEngines.has('standard') ? 'bg-brand-blue border-brand-blue' : 'border-gray-600 group-hover:border-gray-400'}`}>
+              {selectedEngines.has('standard') && <Check className="w-3 h-3 text-white" />}
+            </div>
+            <input type="checkbox" className="hidden" onChange={() => toggleEngine('standard')} checked={selectedEngines.has('standard')} />
+            <span className="text-sm text-gray-300">Standard (AWS)</span>
+          </label>
+        </div>
+      </div>
+
+      {/* Gender Checkboxes */}
+      <div>
+        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Gender</label>
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 cursor-pointer group">
+            <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${selectedGenders.has('Male') ? 'bg-brand-blue border-brand-blue' : 'border-gray-600 group-hover:border-gray-400'}`}>
+              {selectedGenders.has('Male') && <Check className="w-3 h-3 text-white" />}
+            </div>
+            <input type="checkbox" className="hidden" onChange={() => toggleGender('Male')} checked={selectedGenders.has('Male')} />
+            <span className="text-sm text-gray-300">Male</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer group">
+            <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${selectedGenders.has('Female') ? 'bg-brand-blue border-brand-blue' : 'border-gray-600 group-hover:border-gray-400'}`}>
+              {selectedGenders.has('Female') && <Check className="w-3 h-3 text-white" />}
+            </div>
+            <input type="checkbox" className="hidden" onChange={() => toggleGender('Female')} checked={selectedGenders.has('Female')} />
+            <span className="text-sm text-gray-300">Female</span>
+          </label>
+        </div>
+      </div>
+    </>
+  );
+
+  // --- FLOATING MENU STATE ---
+  const [selectionMenu, setSelectionMenu] = useState({ visible: false, position: { top: 0, left: 0 } });
+  const [textScrollPos, setTextScrollPos] = useState(0);
+
+  // Handle textarea scroll for overlay sync
+  const handleTextareaScroll = (e) => {
+    setTextScrollPos(e.target.scrollTop);
+    // Hide menu on scroll
+    setSelectionMenu(prev => ({ ...prev, visible: false }));
+  };
+
+  // Handle Selection for Floating Menu
+  const handleSelectionChange = () => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    setSelectionRange({
+      start: textarea.selectionStart,
+      end: textarea.selectionEnd
+    });
+
+    // If selection exists, calculate position and show menu
+    if (textarea.selectionStart !== textarea.selectionEnd) {
+      const coords = getSelectionCoords(textarea);
+      if (coords) {
+        setSelectionMenu({
+          visible: true,
+          position: coords
+        });
+      }
+    } else {
+      setSelectionMenu(prev => ({ ...prev, visible: false }));
+    }
+  };
+
+  // Apply Mood from Floating Menu
+  const applyFloatingMood = (mood) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+
+    // Only apply if there is a selection
+    if (start === end) return;
+
+    const selectedText = text.substring(start, end);
+    const newText = text.substring(0, start) + `[style:${mood}]` + selectedText + `[/style]` + text.substring(end);
+
+    setText(newText);
+    setSelectionMenu(prev => ({ ...prev, visible: false }));
+
+    // Restore focus
+    textarea.focus();
+  };
+
+  // Insert Break from Floating Menu
+  const insertFloatingBreak = () => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+
+    // Insert after selection
+    const newText = text.substring(0, end) + ` [break:1000ms] ` + text.substring(end);
+
+    setText(newText);
+    setSelectionMenu(prev => ({ ...prev, visible: false }));
+
+    textarea.focus();
+  };
+
+  // --- GLOBAL PROSODY STATE ---
+  const [globalRate, setGlobalRate] = useState(0); // -50 to +50 (%)
+  const [globalPitch, setGlobalPitch] = useState(0); // -12 to +12 (semitones)
+  const [styleIntensity, setStyleIntensity] = useState(1.0); // 0.01 to 2.0
+
   // --- FILTERS STATE ---
   const [languageSearch, setLanguageSearch] = useState('');
   const [selectedEngines, setSelectedEngines] = useState(new Set(['neural'])); // Default to Neural
@@ -47,6 +203,46 @@ export default function Dashboard({ userPlan, onNavigate }) {
 
   // --- VOICE DATA ---
   const allVoices = useMemo(() => getAllVoicesFlat(), []);
+
+  // --- 1. VOICE STYLE CONFIGURATION MAP ---
+  // Maps Azure Voice IDs to their supported styles
+  const VOICE_CONFIG = {
+    // English (US)
+    'en-US-JennyNeural': ['assistant', 'chat', 'customerservice', 'newscast', 'angry', 'cheerful', 'sad', 'excited', 'friendly', 'terrified', 'shouting', 'whispering', 'hopeful'],
+    'en-US-GuyNeural': ['newscast', 'angry', 'cheerful', 'sad', 'excited', 'friendly', 'terrified', 'shouting', 'whispering', 'hopeful'],
+    'en-US-AriaNeural': ['chat', 'customerservice', 'narration-professional', 'newscast-casual', 'newscast-formal', 'cheerful', 'empathetic', 'angry', 'sad', 'excited', 'friendly', 'terrified', 'shouting', 'whispering', 'hopeful'],
+    'en-US-DavisNeural': ['chat', 'angry', 'cheerful', 'sad', 'excited', 'friendly', 'terrified', 'shouting', 'whispering', 'hopeful'],
+    'en-US-JaneNeural': ['angry', 'cheerful', 'sad', 'excited', 'friendly', 'terrified', 'shouting', 'whispering', 'hopeful'],
+    'en-US-JasonNeural': ['angry', 'cheerful', 'sad', 'excited', 'friendly', 'terrified', 'shouting', 'whispering', 'hopeful'],
+    'en-US-NancyNeural': ['angry', 'cheerful', 'sad', 'excited', 'friendly', 'terrified', 'shouting', 'whispering', 'hopeful'],
+    'en-US-SaraNeural': ['angry', 'cheerful', 'sad', 'excited', 'friendly', 'terrified', 'shouting', 'whispering', 'hopeful'],
+    'en-US-TonyNeural': ['angry', 'cheerful', 'sad', 'excited', 'friendly', 'terrified', 'shouting', 'whispering', 'hopeful'],
+
+    // English (UK)
+    'en-GB-SoniaNeural': ['cheerful', 'sad'],
+    'en-GB-RyanNeural': ['cheerful', 'sad', 'chat'],
+
+    // English (India)
+    'en-IN-NeerjaNeural': ['empathetic', 'news', 'cheerful', 'sad'],
+    'en-IN-PrabhatNeural': ['empathetic', 'news', 'cheerful', 'sad'],
+
+    // Hindi (India)
+    'hi-IN-SwaraNeural': ['cheerful', 'sad'],
+    'hi-IN-MadhurNeural': ['cheerful', 'sad'],
+
+    // Default fallback styles if needed, though we primarily rely on exact matches
+  };
+
+  const [availableStyles, setAvailableStyles] = useState([]);
+
+  // --- UPDATE AVAILABLE STYLES WHEN VOICE CHANGES ---
+  useEffect(() => {
+    if (voice && VOICE_CONFIG[voice]) {
+      setAvailableStyles(VOICE_CONFIG[voice]);
+    } else {
+      setAvailableStyles([]);
+    }
+  }, [voice]);
 
   // Computed Filtered Voices
   const filteredVoices = useMemo(() => {
@@ -178,6 +374,35 @@ export default function Dashboard({ userPlan, onNavigate }) {
     }
   };
 
+
+
+  // Insert Break from Toolbar (at cursor)
+  const insertBreakAtCursor = (durationStr) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    // Use current cursor position or end of text if not focused/selected
+    const start = textarea.selectionStart || text.length;
+    const end = textarea.selectionEnd || text.length;
+
+    const tag = ` [break:${durationStr}] `;
+
+    // Insert at cursor
+    const newText = text.substring(0, start) + tag + text.substring(end);
+
+    setText(newText);
+    setIsBreakMenuOpen(false);
+
+    // Restore focus and move cursor after tag
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        const newCursorPos = start + tag.length;
+        textareaRef.current.setSelectionRange(newCursorPos, newCursorPos);
+      }
+    }, 0);
+  };
+
   const handleConvert = async () => {
     if (!text || !voice) return;
 
@@ -201,12 +426,29 @@ export default function Dashboard({ userPlan, onNavigate }) {
     setIsLoading(true);
     setAudioUrl(null);
 
+    // DEBUG: Log payload to ensure tags are present
+    console.log("Sending Conversion Payload:", {
+      text,
+      voice_id: selectedVoiceObj.voice_id || voice,
+      engine: selectedVoiceObj.engine,
+      style_degree: styleIntensity
+    });
+
     try {
       const token = authAPI.getToken();
 
       const response = await axios.post(
         `${API_BASE_URL}/api/convert`,
-        { text, voice_id: selectedVoiceObj.voice_id || voice, engine: selectedVoiceObj.engine }, // Pass derived engine
+        {
+          text, // This state already contains [style:...] tags
+          voice_id: selectedVoiceObj.voice_id || voice,
+          engine: selectedVoiceObj.engine,
+          style_degree: styleIntensity,
+          prosody: {
+            rate: `${globalRate >= 0 ? '+' : ''}${globalRate}%`,
+            pitch: `${globalPitch >= 0 ? '+' : ''}${globalPitch}st`
+          }
+        },
         {
           headers: { Authorization: `Bearer ${token}` },
           timeout: 1800000
@@ -271,90 +513,41 @@ export default function Dashboard({ userPlan, onNavigate }) {
             {userPlan || 'Free'}
           </span>
 
+          {/* Desktop Logout */}
           <button
             onClick={handleLogout}
-            className="flex items-center gap-2 text-sm text-gray-400 hover:text-white"
+            className="hidden md:flex items-center gap-2 text-sm text-gray-400 hover:text-white"
           >
             <LogOut className="w-4 h-4" />
             Logout
+          </button>
+
+          {/* Mobile Hamburger Menu */}
+          <button
+            onClick={() => setIsMobileMenuOpen(true)}
+            className="md:hidden p-2 text-gray-400 hover:text-white"
+          >
+            <Menu className="w-6 h-6" />
           </button>
         </div>
       </nav >
 
       {/* MAIN LAYOUT (3 COLUMNS) */}
-      < main className="max-w-[1600px] mx-auto px-4 py-6 sm:py-8" >
+      <main className="max-w-[1600px] mx-auto px-4 py-6 sm:py-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
           {/* LEFT COLUMN: FILTERS + HISTORY (4 COLS) */}
           <div className="lg:col-span-4 space-y-6">
 
             {/* 1. FILTERS SECTION */}
-            <div className="bg-[#1e293b]/60 border border-white/10 rounded-2xl p-5">
-              <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                <Filter className="w-5 h-5 text-brand-blue" />
-                Filters
-              </h3>
-
-              {/* Language Search */}
-              <div className="mb-6">
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Search Language</label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
-                  <input
-                    type="text"
-                    value={languageSearch}
-                    onChange={(e) => setLanguageSearch(e.target.value)}
-                    placeholder="e.g. English, Hindi..."
-                    className="w-full bg-black/40 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-sm focus:ring-1 focus:ring-brand-blue outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Quality Checkboxes */}
-              <div className="mb-6">
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Quality (Engine)</label>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 cursor-pointer group">
-                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${selectedEngines.has('neural') ? 'bg-brand-blue border-brand-blue' : 'border-gray-600 group-hover:border-gray-400'}`}>
-                      {selectedEngines.has('neural') && <Check className="w-3 h-3 text-white" />}
-                    </div>
-                    <input type="checkbox" className="hidden" onChange={() => toggleEngine('neural')} checked={selectedEngines.has('neural')} />
-                    <span className="text-sm text-gray-300">Neural (Azure)</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer group">
-                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${selectedEngines.has('standard') ? 'bg-brand-blue border-brand-blue' : 'border-gray-600 group-hover:border-gray-400'}`}>
-                      {selectedEngines.has('standard') && <Check className="w-3 h-3 text-white" />}
-                    </div>
-                    <input type="checkbox" className="hidden" onChange={() => toggleEngine('standard')} checked={selectedEngines.has('standard')} />
-                    <span className="text-sm text-gray-300">Standard (AWS)</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Gender Checkboxes */}
-              <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Gender</label>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 cursor-pointer group">
-                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${selectedGenders.has('Male') ? 'bg-brand-blue border-brand-blue' : 'border-gray-600 group-hover:border-gray-400'}`}>
-                      {selectedGenders.has('Male') && <Check className="w-3 h-3 text-white" />}
-                    </div>
-                    <input type="checkbox" className="hidden" onChange={() => toggleGender('Male')} checked={selectedGenders.has('Male')} />
-                    <span className="text-sm text-gray-300">Male</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer group">
-                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${selectedGenders.has('Female') ? 'bg-brand-blue border-brand-blue' : 'border-gray-600 group-hover:border-gray-400'}`}>
-                      {selectedGenders.has('Female') && <Check className="w-3 h-3 text-white" />}
-                    </div>
-                    <input type="checkbox" className="hidden" onChange={() => toggleGender('Female')} checked={selectedGenders.has('Female')} />
-                    <span className="text-sm text-gray-300">Female</span>
-                  </label>
-                </div>
-              </div>
+            {/* 1. FILTERS SECTION (Hidden on mobile) */}
+            <div className="hidden md:block bg-[#1e293b]/60 border border-white/10 rounded-2xl p-5">
+              {renderFilters()}
             </div>
 
             {/* 2. RECENT CONVERSIONS HISTORY (Moved Here) */}
-            <div className="bg-[#1e293b]/40 border border-white/5 rounded-2xl p-4">
+            {/* 2. RECENT CONVERSIONS HISTORY (Moved Here) - Hidden on mobile, shown in drawer */}
+            <div className="hidden md:block bg-[#1e293b]/40 border border-white/5 rounded-2xl p-4">
               <h3 className="text-lg font-semibold mb-3">Recent Conversions</h3>
               {history.length === 0 && !loadingHistory ? (
                 <p className="text-gray-500 text-sm text-center py-6">
@@ -395,6 +588,17 @@ export default function Dashboard({ userPlan, onNavigate }) {
 
           {/* RIGHT COLUMN: VOICE DROPDOWN & INPUT (8 COLS) */}
           <div className="lg:col-span-8 space-y-6">
+
+            {/* MOBILE FILTERS TOGGLE */}
+            <div className="md:hidden">
+              <button
+                onClick={() => setIsMobileFiltersOpen(true)}
+                className="flex items-center justify-center gap-2 px-4 py-3 bg-[#1e293b] border border-white/10 rounded-xl w-full text-brand-blue font-bold shadow-lg"
+              >
+                <Filter className="w-5 h-5" />
+                Filters ⚙️
+              </button>
+            </div>
 
             {/* Voice Selection Dropdown */}
             <div className="bg-[#1e293b]/60 border border-white/10 rounded-2xl p-4 sm:p-6 relative z-30">
@@ -499,15 +703,223 @@ export default function Dashboard({ userPlan, onNavigate }) {
               </div>
             </div>
 
-            {/* Text Input Area */}
-            <div className="bg-[#1e293b]/60 border border-white/10 rounded-2xl p-4 sm:p-6">
-              <textarea
-                value={text}
-                onChange={e => setText(e.target.value)}
-                placeholder="Enter text to convert (select a voice above first)..."
-                className="w-full h-40 bg-black border border-white/10 rounded-xl p-4 text-lg resize-none focus:ring-2 focus:ring-brand-purple outline-none"
+            {/* Text Input Area with Advanced Controls */}
+            <div className="bg-[#1e293b]/60 border border-white/10 rounded-2xl p-4 sm:p-6 space-y-4">
+
+              {/* Toolbar */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/5">
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <button
+                      onClick={() => setIsStyleMenuOpen(!isStyleMenuOpen)}
+                      disabled={!voice || availableStyles.length === 0}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors
+                        ${!voice || availableStyles.length === 0
+                          ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
+                          : 'bg-brand-purple/20 text-brand-purple hover:bg-brand-purple/30'}
+                      `}
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      Apply Style
+                      <ChevronDown className="w-3 h-3" />
+                    </button>
+
+                    {/* Style Dropdown */}
+                    <AnimatePresence>
+                      {isStyleMenuOpen && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 5 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 5 }}
+                          className="absolute top-full left-0 mt-2 w-48 bg-[#0f172a] border border-white/10 rounded-xl shadow-xl z-40 overflow-hidden max-h-60 overflow-y-auto custom-scrollbar"
+                        >
+                          {availableStyles.map((style) => (
+                            <button
+                              key={style}
+                              onClick={() => {
+                                const start = selectionRange.start;
+                                const end = selectionRange.end;
+
+                                // Clean style name for display (uppercase first letter)
+                                const displayStyle = style.charAt(0).toUpperCase() + style.slice(1);
+
+                                let newText = '';
+                                if (start === end) {
+                                  // No selection: Wrap entire text
+                                  if (!text) {
+                                    newText = `[style:${style}]text here[/style]`;
+                                  } else {
+                                    newText = `[style:${style}]${text}[/style]`;
+                                  }
+                                } else {
+                                  // Wrap selection
+                                  const selectedText = text.substring(start, end);
+                                  newText = text.substring(0, start) + `[style:${style}]` + selectedText + `[/style]` + text.substring(end);
+                                }
+
+                                setText(newText);
+                                setIsStyleMenuOpen(false);
+
+                                // Focus back
+                                setTimeout(() => {
+                                  if (textareaRef.current) {
+                                    textareaRef.current.focus();
+                                  }
+                                }, 0);
+                              }}
+                              className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/10 hover:text-white capitalize transition-colors"
+                            >
+                              {style}
+                            </button>
+                          ))}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  {/* Break Dropdown */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setIsBreakMenuOpen(!isBreakMenuOpen)}
+                      className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors bg-purple-500/20 text-purple-300 hover:bg-purple-500/30"
+                    >
+                      <Clock className="w-3 h-3" />
+                      Add Break
+                      <ChevronDown className="w-3 h-3" />
+                    </button>
+
+                    <AnimatePresence>
+                      {isBreakMenuOpen && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 5 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 5 }}
+                          className="absolute top-full left-0 mt-2 w-32 bg-[#0f172a] border border-white/10 rounded-xl shadow-xl z-40 overflow-hidden"
+                        >
+                          {['1000ms', '2000ms', '3000ms', '4000ms', '5000ms'].map((duration) => (
+                            <button
+                              key={duration}
+                              onClick={() => insertBreakAtCursor(duration)}
+                              className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex justify-between"
+                            >
+                              {parseInt(duration) / 1000}s
+                            </button>
+                          ))}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  <span className="text-[10px] text-gray-500 uppercase tracking-widest hidden sm:inline">
+                    {availableStyles.length > 0 ? "Select text to apply styles" : "Styles not available for this voice"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Text Area Container with Overlay */}
+              <div className="relative w-full h-40 group">
+                {/* Visual Feedback Overlay */}
+                <MoodHighlightOverlay
+                  text={text}
+                  scrollPos={textScrollPos}
+                />
+
+                {/* Main Textarea */}
+                <textarea
+                  ref={textareaRef}
+                  value={text}
+                  onChange={e => setText(e.target.value)}
+                  onScroll={handleTextareaScroll}
+                  onMouseUp={handleSelectionChange}
+                  onKeyUp={handleSelectionChange}
+                  onBlur={() => {
+                    // check if clicking menu? handled by mousedown preventDefault on menu
+                    // small delay to allow click events to register if needed
+                    setTimeout(() => {
+                      // checks document.activeElement? 
+                      // Actually we rely on the menu logic to not steal focus.
+                      // But if user clicks 'background', we want to hide.
+                    }, 100);
+                  }}
+                  onSelect={(e) => {
+                    // This is redundant with onMouseUp/KeyUp but good for safety
+                    setSelectionRange({
+                      start: e.target.selectionStart,
+                      end: e.target.selectionEnd
+                    });
+                  }}
+                  placeholder="Enter text to convert (select a voice above first)..."
+                  className="absolute inset-0 w-full h-full bg-transparent border border-white/10 rounded-xl p-4 text-lg resize-none focus:ring-2 focus:ring-brand-purple outline-none font-mono text-white caret-pink-500 z-10 leading-normal"
+                  style={{ lineHeight: '1.5' }} // Explicit line height to match overlay
+                />
+              </div>
+
+              <FloatingSelectionMenu
+                visible={selectionMenu.visible}
+                position={selectionMenu.position}
+                availableStyles={availableStyles}
+                onMood={applyFloatingMood}
+                onClose={() => setSelectionMenu(prev => ({ ...prev, visible: false }))}
               />
-              <div className="flex justify-between items-center mt-3">
+
+              {/* Global Prosody Controls */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+                {/* Style Intensity Slider */}
+                <div className="bg-black/20 p-3 rounded-xl border border-white/5">
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="text-xs text-pink-500 font-bold uppercase tracking-wider flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" /> Intensity
+                    </label>
+                    <span className="text-xs font-mono text-white bg-pink-500/10 px-1.5 py-0.5 rounded">
+                      {styleIntensity}
+                    </span>
+                  </div>
+                  <input
+                    type="range" min="0.1" max="2.0" step="0.1"
+                    value={styleIntensity}
+                    onChange={(e) => setStyleIntensity(parseFloat(e.target.value))}
+                    className="w-full h-1.5 bg-gray-700 rounded-full appearance-none cursor-pointer accent-pink-500"
+                  />
+                </div>
+
+                {/* Speed Slider */}
+                <div className="bg-black/20 p-3 rounded-xl border border-white/5">
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="text-xs text-brand-blue font-bold uppercase tracking-wider flex items-center gap-1">
+                      <Sliders className="w-3 h-3" /> Rate
+                    </label>
+                    <span className="text-xs font-mono text-white bg-brand-blue/10 px-1.5 py-0.5 rounded">
+                      {globalRate >= 0 ? '+' : ''}{globalRate}%
+                    </span>
+                  </div>
+                  <input
+                    type="range" min="-50" max="50" step="1"
+                    value={globalRate}
+                    onChange={(e) => setGlobalRate(parseInt(e.target.value))}
+                    className="w-full h-1.5 bg-gray-700 rounded-full appearance-none cursor-pointer accent-brand-blue"
+                  />
+                </div>
+
+                {/* Pitch Slider */}
+                <div className="bg-black/20 p-3 rounded-xl border border-white/5">
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="text-xs text-brand-purple font-bold uppercase tracking-wider flex items-center gap-1">
+                      <Music className="w-3 h-3" /> Pitch
+                    </label>
+                    <span className="text-xs font-mono text-white bg-brand-purple/10 px-1.5 py-0.5 rounded">
+                      {globalPitch >= 0 ? '+' : ''}{globalPitch}st
+                    </span>
+                  </div>
+                  <input
+                    type="range" min="-12" max="12" step="1"
+                    value={globalPitch}
+                    onChange={(e) => setGlobalPitch(parseInt(e.target.value))}
+                    className="w-full h-1.5 bg-gray-700 rounded-full appearance-none cursor-pointer accent-brand-purple"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center mt-1">
                 <span className="text-xs text-gray-500">
                   {text.length} characters
                 </span>
@@ -664,6 +1076,137 @@ export default function Dashboard({ userPlan, onNavigate }) {
           </div>
         </div>
       </main >
+
+      {/* MOBILE FILTERS DRAWER */}
+      <AnimatePresence>
+        {isMobileFiltersOpen && (
+          <div className="fixed inset-0 z-[60] flex md:hidden">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsMobileFiltersOpen(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+
+            {/* Drawer */}
+            <motion.div
+              initial={{ x: "-100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "-100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="relative w-[300px] h-full bg-[#1e293b] border-r border-white/10 p-6 overflow-y-auto shadow-2xl z-10"
+            >
+              <div className="flex justify-end mb-4">
+                <button
+                  onClick={() => setIsMobileFiltersOpen(false)}
+                  className="p-2 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              {renderFilters()}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MOBILE MENU DRAWER (History + Logout) */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <div className="fixed inset-0 z-[60] flex justify-end md:hidden">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+
+            {/* Drawer */}
+            <motion.div
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="relative w-[300px] h-full bg-[#1e293b] border-l border-white/10 p-6 overflow-y-auto shadow-2xl z-10 flex flex-col"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-brand-blue to-brand-purple">
+                  Menu
+                </h3>
+                <button
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="p-2 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* User Info Mobile */}
+              <div className="mb-6 pb-6 border-b border-white/10">
+                <p className="text-sm text-gray-400 mb-2">Signed in as</p>
+                <p className="font-semibold text-white break-all mb-2">{authAPI.getUserEmail()}</p>
+                <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <span className="uppercase font-bold tracking-wider">Plan: {userPlan}</span>
+                </div>
+              </div>
+
+              {/* Mobile History */}
+              <div className="flex-1 overflow-y-auto custom-scrollbar mb-6">
+                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Recent Conversions</h3>
+                {history.length === 0 ? (
+                  <p className="text-gray-500 text-sm text-center py-4">No history yet</p>
+                ) : (
+                  <div className="space-y-3">
+                    {history.slice(0, 10).map(item => (
+                      <div
+                        key={item.id}
+                        className="flex items-center gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors cursor-pointer"
+                        onClick={() => {
+                          setSelectedItem(item);
+                          setIsMobileMenuOpen(false);
+                        }}
+                      >
+                        <div className="w-8 h-8 rounded-full bg-brand-blue/20 flex flex-shrink-0 items-center justify-center text-xs">
+                          <Play className="w-3 h-3 text-brand-blue" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm truncate font-medium text-gray-200">{item.text}</p>
+                          <p className="text-xs text-gray-500">{new Date(item.created_at).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <button
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    setSearchParams({ view: 'history' });
+                  }}
+                  className="w-full mt-4 py-2 text-xs text-brand-blue hover:text-white hover:bg-white/5 rounded-lg transition-colors flex items-center justify-center gap-2 border border-brand-blue/30"
+                >
+                  See All History
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+              </div>
+
+              {/* Mobile Logout */}
+              <button
+                onClick={handleLogout}
+                className="flex items-center justify-center gap-2 w-full py-3 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-xl transition-colors font-semibold"
+              >
+                <LogOut className="w-4 h-4" />
+                Logout
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* HISTORY MODAL (Keep as overlay if needed) */}
       < AnimatePresence >

@@ -1,6 +1,7 @@
 import os
 import sys
 import boto3
+import re
 
 if os.name != 'nt':
     # 1. FORCE SYSTEM PATHS AT THE OS LEVEL (Linux/Server only)
@@ -385,6 +386,33 @@ def update_plan(plan_name: str, plan_update: PlanLimitUpdate, db: Session = Depe
 static_path = Path(__file__).parent / "static"
 static_path.mkdir(exist_ok=True)
 
+
+def build_advanced_ssml(text, voice_name, style_degree, prosody):
+    # Default values
+    rate = "medium"
+    pitch = "medium"
+    if prosody:
+        rate = prosody.get("rate", "medium")
+        pitch = prosody.get("pitch", "medium")
+
+    # 1. Parse [style:mood]...[/style] -> <mstts:express-as style="mood">...</mstts:express-as>
+    processed_text = re.sub(r"\[style:(.*?)\](.*?)\[/style\]", r'<mstts:express-as style="\1">\2</mstts:express-as>', text, flags=re.DOTALL)
+
+    # 2. Parse [break:time] -> <break time="time" />
+    processed_text = re.sub(r"\[break:(.*?)\]", r'<break time="\1" />', processed_text)
+
+    # 3. Build SSML
+    ssml = f"""
+    <speak version='1.0' xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang='en-US'>
+        <voice xml:lang='en-US' xml:gender='Female' name='{voice_name}'>
+            <prosody rate='{rate}' pitch='{pitch}'>
+                {processed_text}
+            </prosody>
+        </voice>
+    </speak>
+    """
+    return ssml.strip()
+
 @app.post("/api/convert", response_model=ConversionOut)
 def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if not conversion.text.strip():
@@ -423,15 +451,13 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
             logger.error(f"Failed to get Azure Token: {e}")
             raise HTTPException(status_code=500, detail="Text-to-Speech Service Unavailable (Azure)")
 
-        def azure_tts(text_chunk, voice_name_param, output_file):
+        def azure_tts(text_chunk, voice_name_param, output_file, style_degree, prosody):
             tts_url = f"https://{service_region}.tts.speech.microsoft.com/cognitiveservices/v1"
-            ssml = f"""
-            <speak version='1.0' xml:lang='en-US'>
-                <voice xml:lang='en-US' xml:gender='Female' name='{voice_name_param}'>
-                    {text_chunk}
-                </voice>
-            </speak>
-            """
+            ssml = build_advanced_ssml(text_chunk, voice_name_param, style_degree, prosody)
+            
+            # --- DEBUG: LOG SSML ---
+            logger.info(f"\n[DEBUG] Azure SSML Payload:\n{ssml}\n")
+            
             headers = {
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/ssml+xml",
@@ -455,7 +481,7 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
         if not os.getenv("AWS_ACCESS_KEY_ID") and not os.getenv("AWS_PROFILE"):
              logger.warning("AWS Credentials might be missing. Proceeding with boto3 defaults.")
 
-        def aws_tts(text_chunk, voice_name_param, output_file):
+        def aws_tts(text_chunk, voice_name_param, output_file, style_degree, prosody):
             try:
                 # explicitly get region
                 aws_region = os.getenv("AWS_REGION", "us-east-1")
@@ -511,7 +537,7 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
                 temp_path = audio_base_path / temp_filename
                 
                 # CALL ENGINE API
-                success = convert_single_chunk(chunk, voice_name, str(temp_path))
+                success = convert_single_chunk(chunk, voice_name, str(temp_path), conversion.style_degree, conversion.prosody)
                 
                 if success:
                     try:
@@ -533,7 +559,7 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
             
         else:
             # --- SINGLE CALL ---
-            success = convert_single_chunk(conversion.text, voice_name, str(file_path))
+            success = convert_single_chunk(conversion.text, voice_name, str(file_path), conversion.style_degree, conversion.prosody)
             if success:
                 logger.info(f"Conversion successful. Audio saved at: {file_path}")
             else:
