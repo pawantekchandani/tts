@@ -42,8 +42,10 @@ class TestUtils:
     def test_smart_split_space_fallback(self):
         text = "Hello world This is a test"
         # No punctuation. Should split at space.
-        chunks = smart_split(text, limit=12)
-        # "Hello world" is 11 chars
+        # "Hello world" is 11 chars. "This is a test" is 14 chars.
+        # If limit is 12, "This is a test" will be split again.
+        # Let's use limit=15 to allow the second part to stay together.
+        chunks = smart_split(text, limit=15)
         
         assert chunks[0] == "Hello world"
         assert chunks[1] == "This is a test"
@@ -59,14 +61,16 @@ class TestUtils:
 
     # --- send_email Tests ---
 
-    def test_send_email_testing_mode(self, capsys):
+    def test_send_email_testing_mode(self, caplog):
         """Verify email is NOT sent via SMTP in testing mode."""
-        with patch.dict(os.environ, {"TESTING": "True"}):
-            result = send_email("test@test.com", "Subject", "Body")
-            
-            assert result is True
-            captured = capsys.readouterr()
-            # Check stderr for logger output
-            assert "TESTING MODE" in captured.err
+        import logging
+        with caplog.at_level(logging.INFO):
+            with patch.dict(os.environ, {"TESTING": "True"}):
+                result = send_email("test@test.com", "Subject", "Body")
+                
+                assert result is True
+                # Check logs for output
+                assert "TESTING MODE: Email suppression active." in caplog.text
+                assert "To: test@test.com" in caplog.text
 
 
