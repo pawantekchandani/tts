@@ -5,16 +5,20 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def seed_plans():
+def seed_plans(db: Session = None):
     """
     Seeds the database with default plan limits if they do not exist.
     """
-    db: Session = SessionLocal()
+    should_close = False
+    if db is None:
+        db = SessionLocal()
+        should_close = True
+        
     try:
         # Define default plans
         plans = [
             {"plan_name": "Free", "credit_limit": 1000, "history_days": 7},
-            {"plan_name": "Basic", "credit_limit": 1000, "history_days": 7}, # Alias for Free?
+            {"plan_name": "Basic", "credit_limit": 3000, "history_days": 7},
             {"plan_name": "Pro", "credit_limit": 10000, "history_days": 30},
             {"plan_name": "Plus", "credit_limit": 50000, "history_days": 90}
         ]
@@ -34,7 +38,8 @@ def seed_plans():
         logger.error(f"Failed to seed plans: {e}")
         db.rollback()
     finally:
-        db.close()
+        if should_close:
+            db.close()
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

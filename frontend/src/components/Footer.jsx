@@ -136,19 +136,7 @@ export default function Footer({ onNavigate }) {
                                 </div>
                                 <span className="text-sm">support@pollyglot.com</span>
                             </a>
-                            <div className="p-4 rounded-2xl bg-gradient-to-br from-white/5 to-white/0 border border-white/5">
-                                <p className="text-xs text-gray-400 mb-2">Subscribe to our newsletter</p>
-                                <div className="flex gap-2">
-                                    <input
-                                        type="email"
-                                        placeholder="Email address"
-                                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:ring-1 focus:ring-brand-purple outline-none"
-                                    />
-                                    <button className="bg-brand-purple hover:bg-brand-purple/80 text-white p-2 rounded-lg transition-colors">
-                                        <Heart className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            </div>
+
                         </div>
                     </div>
 

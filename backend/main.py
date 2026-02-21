@@ -7,11 +7,10 @@ if os.name != 'nt':
     # 1. FORCE SYSTEM PATHS AT THE OS LEVEL (Linux/Server only)
     os.environ["PATH"] += os.pathsep + "/home/rseivuhw/bin"
 
-from pydub import AudioSegment
-# Set specific paths as backup for Linux 
+# pydub removed: audio chunk merging now uses raw binary concatenation (no ffmpeg needed)
 if os.name != 'nt':
-    AudioSegment.converter = "/home/rseivuhw/bin/ffmpeg"
-    AudioSegment.ffprobe = "/home/rseivuhw/bin/ffprobe"
+    # Linux-only: set ffmpeg paths if needed by other tools
+    pass
 
 # 2. DEBUG PRINT TO VERIFY
 print(f"DEBUG: Current OS PATH: {os.environ['PATH']}")
@@ -53,7 +52,7 @@ else:
 
 import sentry_sdk
 import logging
-from fastapi import FastAPI, Depends, HTTPException, status, Request
+from fastapi import FastAPI, Depends, HTTPException, status, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
@@ -77,6 +76,7 @@ from fastapi.security import OAuth2PasswordBearer
 from auth import verify_token
 import io
 import traceback
+import pdfplumber
 
 # --- AUTO MIGRATION ---
 # --- AUTO MIGRATION ---
@@ -381,6 +381,59 @@ def update_plan(plan_name: str, plan_update: PlanLimitUpdate, db: Session = Depe
     return plan
 
 
+# --- PDF EXTRACTION ROUTE ---
+
+@app.post("/api/extract-pdf")
+async def extract_pdf(file: UploadFile = File(...)):
+    """
+    Accepts a PDF file upload, extracts all text using pdfplumber,
+    cleans up broken line breaks, and returns the text as JSON.
+    """
+    # 1. Validate file type
+    is_pdf = (
+        (file.content_type and file.content_type == "application/pdf")
+        or (file.filename and file.filename.lower().endswith(".pdf"))
+    )
+    if not is_pdf:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file type. Please upload a PDF file."
+        )
+
+    # 2. Extract text from all pages
+    try:
+        with pdfplumber.open(file.file) as pdf:
+            raw_pages = []
+            for page in pdf.pages:
+                text = page.extract_text()
+                if text:
+                    raw_pages.append(text)
+
+        # Join pages with double newline (paragraph break between pages)
+        raw_text = "\n\n".join(raw_pages)
+
+        # 3. Cleanup: preserve \n\n (paragraph breaks) but replace single \n with a space
+        # Step 1 — protect paragraph breaks by replacing \n\n with a placeholder
+        placeholder = "@@PARAGRAPH@@"
+        cleaned = raw_text.replace("\n\n", placeholder)
+        # Step 2 — replace all remaining single \n with a space
+        cleaned = cleaned.replace("\n", " ")
+        # Step 3 — restore paragraph breaks
+        cleaned = cleaned.replace(placeholder, "\n\n")
+        # Step 4 — collapse multiple spaces into one
+        cleaned = re.sub(r" {2,}", " ", cleaned).strip()
+
+        logger.info(f"PDF extracted successfully: {file.filename} ({len(cleaned)} chars)")
+        return {"extracted_text": cleaned}
+
+    except Exception as e:
+        logger.error(f"PDF extraction failed for '{file.filename}': {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to read PDF: {str(e)}"
+        )
+
+
 # --- CONTENT ROUTES ---
 
 static_path = Path(__file__).parent / "static"
@@ -388,30 +441,92 @@ static_path.mkdir(exist_ok=True)
 
 
 def build_advanced_ssml(text, voice_name, style_degree, prosody):
-    # Default values
-    rate = "medium"
-    pitch = "medium"
-    if prosody:
-        rate = prosody.get("rate", "medium")
-        pitch = prosody.get("pitch", "medium")
-
-    # 1. Parse [style:mood]...[/style] -> <mstts:express-as style="mood">...</mstts:express-as>
-    processed_text = re.sub(r"\[style:(.*?)\](.*?)\[/style\]", r'<mstts:express-as style="\1">\2</mstts:express-as>', text, flags=re.DOTALL)
-
-    # 2. Parse [break:time] -> <break time="time" />
-    processed_text = re.sub(r"\[break:(.*?)\]", r'<break time="\1" />', processed_text)
-
-    # 3. Build SSML
-    ssml = f"""
-    <speak version='1.0' xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang='en-US'>
-        <voice xml:lang='en-US' xml:gender='Female' name='{voice_name}'>
-            <prosody rate='{rate}' pitch='{pitch}'>
-                {processed_text}
-            </prosody>
-        </voice>
-    </speak>
     """
+    Converts text with custom tags [voice], [style], [break] into valid Azure SSML.
+    Uses a state-aware approach to handle nesting and ensure valid XML hierarchy.
+    """
+    # 1. Default Prosody Values
+    rate = prosody.get("rate", "medium") if prosody else "medium"
+    pitch = prosody.get("pitch", "medium") if prosody else "medium"
+    # Ensure percentages/semitones are handled if passed as integers/floats
+    if isinstance(rate, (int, float)): rate = f"{rate}%"
+    if isinstance(pitch, (int, float)): pitch = f"{pitch}st"
+
+    # 2. Atomic Replacements (Breaks)
+    text = re.sub(r"\[break:(.*?)\]", r'<break time="\1" />', text)
+
+    # 3. State Tracking for Segmentation
+    active_voice = voice_name
+    active_style = None
+    
+    # Split text by voice or style tags to process chronologically
+    pattern = r'(\[voice:.*?\]|\[/voice\]|\[style:.*?\]|\[/style\])'
+    parts = re.split(pattern, text, flags=re.DOTALL)
+    
+    ssml_body = []
+
+    def open_segment(v, s):
+        """Helper to open voice and prosody wrappers, and optional style."""
+        seg = f'<voice name="{v}"><prosody rate="{rate}" pitch="{pitch}">'
+        if s:
+            # Add styledegree if provided and valid
+            degree_attr = f' styledegree="{style_degree}"' if style_degree and style_degree != 1.0 else ""
+            seg += f'<mstts:express-as style="{s}"{degree_attr}>'
+        return seg
+
+    def close_segment(s):
+        """Helper to close current style and voice/prosody wrappers."""
+        seg = ""
+        if s:
+            seg += '</mstts:express-as>'
+        seg += '</prosody></voice>'
+        return seg
+
+    # Start the first segment with the default speaker
+    ssml_body.append(open_segment(active_voice, active_style))
+
+    for part in parts:
+        if not part:
+            continue
+
+        # Detect Control Tags
+        v_start = re.match(r'\[voice:(.*?)\]', part)
+        v_end = (part == '[/voice]')
+        s_start = re.match(r'\[style:(.*?)\]', part)
+        s_end = (part == '[/style]')
+
+        if v_start:
+            # Switch Speaker: Close current, update voice, re-open
+            ssml_body.append(close_segment(active_style))
+            active_voice = v_start.group(1)
+            ssml_body.append(open_segment(active_voice, active_style))
+        elif v_end:
+            # Revert to Default Speaker
+            ssml_body.append(close_segment(active_style))
+            active_voice = voice_name
+            ssml_body.append(open_segment(active_voice, active_style))
+        elif s_start:
+            # Apply Style: Inject tag (already inside voice/prosody)
+            active_style = s_start.group(1)
+            degree_attr = f' styledegree="{style_degree}"' if style_degree and style_degree != 1.0 else ""
+            ssml_body.append(f'<mstts:express-as style="{active_style}"{degree_attr}>')
+        elif s_end:
+            # End Style
+            ssml_body.append('</mstts:express-as>')
+            active_style = None
+        else:
+            # Raw Text or Break Tag
+            ssml_body.append(part)
+
+    # Final close
+    ssml_body.append(close_segment(active_style))
+
+    # 4. Construct Final SSML
+    full_body = "".join(ssml_body)
+    ssml = f"""<speak version='1.0' xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang='en-US'>{full_body}</speak>"""
+    
     return ssml.strip()
+
 
 @app.post("/api/convert", response_model=ConversionOut)
 def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -527,7 +642,8 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
             chunks = smart_split(conversion.text)
             logger.info(f"Text too long, split into {len(chunks)} chunks.")
             
-            combined_audio = AudioSegment.empty()
+            # Collect raw MP3 binary data from each chunk (no ffmpeg needed)
+            combined_mp3_bytes = bytearray()
             
             for i, chunk in enumerate(chunks):
                 if not chunk.strip():
@@ -541,11 +657,12 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
                 
                 if success:
                     try:
-                        chunk_audio = AudioSegment.from_file(str(temp_path), format="mp3")
-                        combined_audio += chunk_audio
+                        with open(str(temp_path), 'rb') as f:
+                            combined_mp3_bytes += f.read()
                         logger.info(f"Processed chunk {i+1}/{len(chunks)}")
                     except Exception as e:
-                         logger.error(f"Error merging chunk: {e}")
+                        logger.error(f"Error reading chunk audio: {e}")
+                        raise
                     finally:
                         if temp_path.exists():
                             try:
@@ -555,7 +672,10 @@ def convert_text(conversion: ConversionCreate, db: Session = Depends(get_db), cu
                 else:
                     raise Exception("Failed to convert chunk via API")
 
-            combined_audio.export(str(file_path), format="mp3")
+            # Write the concatenated MP3 bytes directly — no ffmpeg needed
+            with open(str(file_path), 'wb') as f:
+                f.write(combined_mp3_bytes)
+            logger.info(f"Merged {len(chunks)} chunks into: {file_path}")
             
         else:
             # --- SINGLE CALL ---
