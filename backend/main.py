@@ -108,6 +108,8 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 
 app.include_router(admin_routes.router)
+from api.auth_google import router as google_auth_router
+app.include_router(google_auth_router, prefix="/api")
 
 # Handle DB Migrations (Existing Schema Changes)
 # Handle DB Migrations (Existing Schema Changes)

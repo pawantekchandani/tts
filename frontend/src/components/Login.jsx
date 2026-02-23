@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { authAPI } from '../api/auth'
 import toast from 'react-hot-toast'
+import GoogleLoginButton from './GoogleLoginButton'
 
 export default function Login({ onSuccess, onSwitchToRegister, onSwitchToForgotPassword }) {
   const [email, setEmail] = useState('')
@@ -16,6 +17,16 @@ export default function Login({ onSuccess, onSwitchToRegister, onSwitchToForgotP
       localStorage.removeItem('session_expired');
     }
   }, []);
+
+  const handleGoogleSuccess = () => {
+    onSuccess();
+    const userEmail = localStorage.getItem('user_email');
+    if (userEmail && userEmail.toLowerCase() === 'admin@gmail.com') {
+      navigate('/admin');
+    } else {
+      navigate('/');
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -54,6 +65,14 @@ export default function Login({ onSuccess, onSwitchToRegister, onSwitchToForgotP
     <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
       <div className="bg-gray-900 rounded-lg shadow-2xl p-8 w-full max-w-md border border-gray-800">
         <h2 className="text-3xl font-bold text-center text-green-500 mb-8">Start Login</h2>
+
+        <GoogleLoginButton onSuccess={handleGoogleSuccess} />
+
+        <div className="flex items-center justify-center mb-6">
+          <div className="h-px bg-gray-700 w-full flex-1"></div>
+          <span className="text-gray-500 px-4 text-sm font-semibold uppercase">Or login with Email</span>
+          <div className="h-px bg-gray-700 w-full flex-1"></div>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
