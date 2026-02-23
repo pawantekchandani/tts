@@ -1,14 +1,29 @@
+stages:
+  - build
+  - deploy
+
+build_frontend_job:
+  stage: build
+  image: node:18
+  script:
+    - cd frontend
+    - npm install
+    - npm run build
+  artifacts:
+    paths:
+      - frontend/dist/
+    expire_in: 1 week
+
 deploy_to_milesweb:
   stage: deploy
   image: alpine:latest
   dependencies:
-    - build_frontend
+    - build_frontend_job
   before_script:
     - apk add --no-cache lftp openssh-client
-    # Private Key ki permissions set karna taaki SSH ise reject na kare
     - chmod 400 $SSH_PRIVATE_KEY
   script:
-    # 1. FTP Upload (Frontend dist files and Backend code)
+    # 1. FTP Upload
     - lftp -e "set ftp:ssl-allow no; open $FTP_SERVER; user $FTP_USERNAME $FTP_PASSWORD; 
       mirror -R frontend/dist/ tts.testingprojects.online/;
       mirror -R backend/ tts_app/backend/; 
@@ -16,7 +31,7 @@ deploy_to_milesweb:
       put passenger_wsgi.py -o tts_app/passenger_wsgi.py;
       quit"
 
-    # 2. SSH Execution (Installing libraries & Restarting App)
+    # 2. SSH Execution (Key-based)
     - ssh -o StrictHostKeyChecking=no -p 22999 -i $SSH_PRIVATE_KEY $FTP_USERNAME@$FTP_SERVER "
       cd /home/rseivuhw/tts_app && 
       source /home/rseivuhw/virtualenv/tts_app/3.11/bin/activate && 
