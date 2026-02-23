@@ -30,9 +30,9 @@ deploy_to_milesweb:
       put passenger_wsgi.py -o tts_app/passenger_wsgi.py;
       quit"
 
-    # 2. SSH Execution Password-Based
+    # 2. SSH Execution (Automation)
     - export SSHPASS=$SSH_PASSWORD
-    - sshpass -e ssh -o StrictHostKeyChecking=no -p 22999 $FTP_USERNAME@$FTP_SERVER "
+    - sshpass -e ssh -o StrictHostKeyChecking=no -p 22999 rseivuhw@$FTP_SERVER "
       cd /home/rseivuhw/tts_app && 
       source /home/rseivuhw/virtualenv/tts_app/3.11/bin/activate && 
       python3 -m pip install -r requirements.txt && 
