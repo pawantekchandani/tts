@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@react-oauth/google": "^0.13.4",
     "audiobuffer-to-wav": "^1.0.0",
     "axios": "^1.6.0",
     "date-fns": "^4.1.0",
