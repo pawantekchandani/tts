@@ -1,3 +1,19 @@
+stages:
+  - build
+  - deploy
+
+build_frontend_job:
+  stage: build
+  image: node:18
+  script:
+    - cd frontend
+    - npm install
+    - npm run build
+  artifacts:
+    paths:
+      - frontend/dist/
+    expire_in: 1 week
+
 deploy_to_milesweb:
   stage: deploy
   image: alpine:latest
@@ -5,12 +21,13 @@ deploy_to_milesweb:
     - build_frontend_job
   before_script:
     - apk add --no-cache lftp openssh-client
-    # Manual key file creation to avoid libcrypto error
+    # Manual key file setup with clean formatting
     - mkdir -p ~/.ssh
-    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
+    - chmod 700 ~/.ssh
+    - printf "%b" "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
     - chmod 600 ~/.ssh/id_rsa
   script:
-    # 1. FTP Upload (Files transfer)
+    # 1. FTP Upload (Transfer files)
     - lftp -e "set ftp:ssl-allow no; open $FTP_SERVER; user $FTP_USERNAME $FTP_PASSWORD; 
       mirror -R frontend/dist/ tts.testingprojects.online/;
       mirror -R backend/ tts_app/backend/; 
@@ -18,7 +35,7 @@ deploy_to_milesweb:
       put passenger_wsgi.py -o tts_app/passenger_wsgi.py;
       quit"
 
-    # 2. SSH Execution (Using manual key path)
+    # 2. SSH Execution (Automation)
     - ssh -o StrictHostKeyChecking=no -p 22999 -i ~/.ssh/id_rsa $FTP_USERNAME@$FTP_SERVER "
       cd /home/rseivuhw/tts_app && 
       source /home/rseivuhw/virtualenv/tts_app/3.11/bin/activate && 
