@@ -31,7 +31,7 @@ deploy_to_milesweb:
       quit"
 
     # 2. SSH Execution Password-Based
-    - export SSHPASS=$FTP_PASSWORD
+    - export SSHPASS=$SSH_PASSWORD
     - sshpass -e ssh -o StrictHostKeyChecking=no -p 22999 $FTP_USERNAME@$FTP_SERVER "
       cd /home/rseivuhw/tts_app && 
       source /home/rseivuhw/virtualenv/tts_app/3.11/bin/activate && 
