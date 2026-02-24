@@ -1,0 +1,178 @@
+## API Documentation
+
+The backend provides a RESTful API powered by FastAPI. Base URL is `/api`
+
+### `GET /api/admin/user-details`
+**Summary**: Get User Details
+**Responses**:
+- `200`: Successful Response
+
+---
+### `PUT /api/admin/update-user-plan`
+**Summary**: Update User Plan
+**Request Body**:
+- `user_id` (string) (Required)
+- `plan_type` (string) (Required)
+
+**Responses**:
+- `200`: Successful Response
+- `422`: Validation Error
+
+---
+### `POST /api/auth/google`
+**Summary**: Google Auth
+**Request Body**:
+- `token` (string) (Required)
+
+**Responses**:
+- `200`: Successful Response
+- `422`: Validation Error
+
+---
+### `GET /health`
+**Summary**: Health Check
+**Responses**:
+- `200`: Successful Response
+
+---
+### `POST /api/signup`
+**Summary**: Signup
+**Request Body**:
+- `email` (string) (Required)
+- `password` (string) (Required)
+
+**Responses**:
+- `200`: Successful Response
+- `422`: Validation Error
+
+---
+### `POST /api/login`
+**Summary**: Login
+**Request Body**:
+- `email` (string) (Required)
+- `password` (string) (Required)
+
+**Responses**:
+- `200`: Successful Response
+- `422`: Validation Error
+
+---
+### `GET /api/me`
+**Summary**: Get Current User Profile
+**Responses**:
+- `200`: Successful Response
+
+---
+### `POST /api/forgot-password`
+**Summary**: Forgot Password
+**Request Body**:
+- `email` (string) (Required)
+
+**Responses**:
+- `200`: Successful Response
+- `422`: Validation Error
+
+---
+### `POST /api/reset-password`
+**Summary**: Reset Password
+**Request Body**:
+- `token` (string) (Required)
+- `new_password` (string) (Required)
+
+**Responses**:
+- `200`: Successful Response
+- `422`: Validation Error
+
+---
+### `GET /api/admin/stats`
+**Summary**: Get Admin Stats
+**Responses**:
+- `200`: Successful Response
+
+---
+### `GET /api/admin/plans`
+**Summary**: Get Plans
+**Responses**:
+- `200`: Successful Response
+
+---
+### `PUT /api/admin/plans/{plan_name}`
+**Summary**: Update Plan
+**Request Body**:
+- `credit_limit` (integer) (Required)
+- `history_days` (integer) (Required)
+
+**Parameters**:
+- `plan_name` (path) (Required)
+
+**Responses**:
+- `200`: Successful Response
+- `422`: Validation Error
+
+---
+### `POST /api/extract-pdf`
+**Summary**: Extract Pdf
+**Request Body**:
+- `file` (binary string) (Required) - Multipart form data
+
+**Responses**:
+- `200`: Successful Response
+- `422`: Validation Error
+
+---
+### `POST /api/convert`
+**Summary**: Convert Text
+**Request Body**:
+- `text` (string) (Required)
+- `voice_id` (string) (Optional)
+- `engine` (string) (Optional)
+- `style` (any) (Optional)
+- `style_degree` (any) (Optional)
+- `prosody` (any) (Optional)
+
+**Responses**:
+- `200`: Successful Response
+- `422`: Validation Error
+
+---
+### `GET /api/history`
+**Summary**: Get History
+**Parameters**:
+- `page` (query) (Optional)
+- `limit` (query) (Optional)
+- `search` (query) (Optional)
+- `date` (query) (Optional)
+
+**Responses**:
+- `200`: Successful Response
+- `422`: Validation Error
+
+---
+### `POST /api/history`
+**Summary**: Save History
+**Request Body**:
+- `text` (string) (Required)
+- `voice_id` (string) (Optional)
+- `engine` (string) (Optional)
+- `style` (any) (Optional)
+- `style_degree` (any) (Optional)
+- `prosody` (any) (Optional)
+
+**Parameters**:
+- `audio_url` (query) (Required)
+
+**Responses**:
+- `200`: Successful Response
+- `422`: Validation Error
+
+---
+### `GET /api/download/{conversion_id}`
+**Summary**: Download Conversion
+**Parameters**:
+- `conversion_id` (path) (Required)
+
+**Responses**:
+- `200`: Successful Response
+- `422`: Validation Error
+
+---
