@@ -104,5 +104,114 @@ npm run dev
 
 Your frontend will be accessible correctly configured and running at `http://localhost:5173`.
 
+
+---
+
+## API Documentation
+
+| Endpoint | Method | Summary |
+| --- | --- | --- |
+| `/api/admin/user-details` | GET | Get User Details |
+| `/api/admin/update-user-plan` | PUT | Update User Plan |
+| `/api/auth/google` | POST | Google Auth |
+| `/health` | GET | Health Check |
+| `/api/signup` | POST | Signup |
+| `/api/login` | POST | Login |
+| `/api/me` | GET | Get Current User Profile |
+| `/api/forgot-password` | POST | Forgot Password |
+| `/api/reset-password` | POST | Reset Password |
+| `/api/admin/stats` | GET | Get Admin Stats |
+| `/api/admin/plans` | GET | Get Plans |
+| `/api/admin/plans/{plan_name}` | PUT | Update Plan |
+| `/api/extract-pdf` | POST | Extract Pdf |
+| `/api/convert` | POST | Convert Text |
+| `/api/history` | GET | Get History |
+| `/api/history` | POST | Save History |
+| `/static/audio/{file_path:path}` | GET | Get Audio File |
+| `/api/download/{conversion_id}` | GET | Download Conversion |
+| `/` | GET | Frontend Missing |
+
+### Detailed Endpoints
+
+#### `/api/admin/user-details`
+- **Method:** GET
+- **Summary:** Get User Details
+- **Tags:** admin
+
+#### `/api/admin/update-user-plan`
+- **Method:** PUT
+- **Summary:** Update User Plan
+- **Tags:** admin
+
+#### `/api/auth/google`
+- **Method:** POST
+- **Summary:** Google Auth
+
+#### `/health`
+- **Method:** GET
+- **Summary:** Health Check
+
+#### `/api/signup`
+- **Method:** POST
+- **Summary:** Signup
+
+#### `/api/login`
+- **Method:** POST
+- **Summary:** Login
+
+#### `/api/me`
+- **Method:** GET
+- **Summary:** Get Current User Profile
+
+#### `/api/forgot-password`
+- **Method:** POST
+- **Summary:** Forgot Password
+
+#### `/api/reset-password`
+- **Method:** POST
+- **Summary:** Reset Password
+
+#### `/api/admin/stats`
+- **Method:** GET
+- **Summary:** Get Admin Stats
+
+#### `/api/admin/plans`
+- **Method:** GET
+- **Summary:** Get Plans
+
+#### `/api/admin/plans/{plan_name}`
+- **Method:** PUT
+- **Summary:** Update Plan
+
+#### `/api/extract-pdf`
+- **Method:** POST
+- **Summary:** Extract Pdf
+- **Description:** Accepts a PDF file upload, extracts all text using pdfplumber,
+
+#### `/api/convert`
+- **Method:** POST
+- **Summary:** Convert Text
+
+#### `/api/history`
+- **Method:** GET
+- **Summary:** Get History
+
+#### `/api/history`
+- **Method:** POST
+- **Summary:** Save History
+
+#### `/static/audio/{file_path:path}`
+- **Method:** GET
+- **Summary:** Get Audio File
+
+#### `/api/download/{conversion_id}`
+- **Method:** GET
+- **Summary:** Download Conversion
+
+#### `/`
+- **Method:** GET
+- **Summary:** Frontend Missing
+
+
 ---
 *Developed by HappyBrain Group*
