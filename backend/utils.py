@@ -21,6 +21,9 @@ def check_user_limits(user_id: str, db: Session, text_length: int = 0) -> dict:
     latest_transaction = db.query(Transaction).filter(Transaction.user_id == user_id).order_by(Transaction.timestamp.desc()).first()
     current_plan_name = latest_transaction.plan_type if latest_transaction else "Basic"
     
+    # Ensure capitalization matches exactly what is in PlanLimits
+    current_plan_name = current_plan_name.capitalize()
+    
     # 2. Fetch Plan Limits
     plan_limits = db.query(PlanLimits).filter(PlanLimits.plan_name == current_plan_name).first()
     if not plan_limits:

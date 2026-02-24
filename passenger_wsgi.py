@@ -21,15 +21,19 @@ if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
 # 4. The Application Handler
+_asgi_app = None
+
 def application(environ, start_response):
+    global _asgi_app
     try:
-        # Import your FastAPI app
-        from main import app
-        from a2wsgi import ASGIMiddleware
-        
+        if _asgi_app is None:
+            # Import your FastAPI app
+            from main import app
+            from a2wsgi import ASGIMiddleware
+            _asgi_app = ASGIMiddleware(app)
+            
         # Pass the request to FastAPI
-        return ASGIMiddleware(app)(environ, start_response)
-        
+        return _asgi_app(environ, start_response)
     except Exception:
         # IF IT CRASHES: Print the full error to the browser and log file
         error_msg = traceback.format_exc()
