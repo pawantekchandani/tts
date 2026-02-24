@@ -264,6 +264,9 @@ def get_current_user_profile(db: Session = Depends(get_db), current_user: User =
     latest_tx = db.query(Transaction).filter(Transaction.user_id == current_user.id).order_by(Transaction.timestamp.desc()).first()
     plan_type = latest_tx.plan_type if latest_tx else "Basic"
     
+    # Ensure proper capitalization ("Basic", "Free", "Plus", "Pro") matches the DB seeding
+    plan_type = plan_type.capitalize()
+    
     # Get plan limits
     plan_limits = db.query(PlanLimits).filter(PlanLimits.plan_name == plan_type).first()
     if not plan_limits:
@@ -721,6 +724,7 @@ def get_history(
     # 1. Determine User's Plan & History Limit
     latest_transaction = db.query(Transaction).filter(Transaction.user_id == current_user.id).order_by(Transaction.timestamp.desc()).first()
     current_plan_name = latest_transaction.plan_type if latest_transaction else "Basic"
+    current_plan_name = current_plan_name.capitalize()
     
     plan_limits = db.query(PlanLimits).filter(PlanLimits.plan_name == current_plan_name).first()
     history_days = plan_limits.history_days if plan_limits else 7 # Default to 7 days if something goes wrong
