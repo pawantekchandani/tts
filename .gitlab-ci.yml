@@ -7,7 +7,7 @@ build_frontend_job:
   image: node:18
   script:
     - cd frontend
-    - npm install
+    - npm install --legacy-peer-deps
     - npm run build
   artifacts:
     paths:
