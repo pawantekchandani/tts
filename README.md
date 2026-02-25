@@ -2,6 +2,8 @@
 
 **Neural Voice** is an advanced Text-to-Speech (TTS) SaaS application designed to help users convert text and documents into lifelike speech. It features a modern, responsive user interface and a robust backend capable of handling complex natural language processing tasks.
 
+**Live Demo**- https://tts.testingprojects.online/
+
 ---
 
 ## 🚀 Key Features
@@ -33,32 +35,6 @@
 - **State/API**: Axios, React Router
 
 ---
-
-## 🏗 Architecture Diagram
-
-```mermaid
-graph TD
-    Client["Client Browser<br>(React / Vite)"]
-    API["FastAPI Backend<br>(Python 3.11)"]
-    DB[("MySQL Database<br>(SQLAlchemy)")]
-    
-    subgraph External Services
-        AWS["AWS Polly TTS"]
-        Azure["Azure TTS"]
-        Google["Google OAuth 2.0"]
-        SMTP["SMTP Email Server"]
-        Sentry["Sentry Error Tracking"]
-    end
-
-    Client -- "REST API Calls" --> API
-    Client -. "Authentication" .-> Google
-    
-    API -- "CRUD Operations" --> DB
-    API -- "TTS Conversion" --> AWS
-    API -- "TTS Conversion" --> Azure
-    API -- "Send Notifications" --> SMTP
-    API -- "Log Errors" --> Sentry
-```
 
 ---
 
