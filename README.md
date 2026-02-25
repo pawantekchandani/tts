@@ -34,20 +34,6 @@
 
 ---
 
-## 📐 Architecture Diagram
-
-```mermaid
-graph TD
-    U((User)) -->|Interacts| FE["React Frontend"]
-    FE -->|API Requests| BE["FastAPI Backend"]
-    BE -->|Database Query| DB[("MySQL Database")]
-    BE -->|TTS Request| AWS["AWS Polly / Azure Service"]
-    AWS -->|Audio Stream| BE
-    BE -->|Audio Processing| BE
-    BE -->|Save Audio| FS["Local Storage"]
-    FE -->|Download| FS
-```
-
 ---
 
 ## 🧵 Long Text Processing (Chunking & Stitching)
