@@ -1,217 +1,204 @@
-# PollyGlot-TTS
+# 🎧 Neural Voice
 
-PollyGlot-TTS is an advanced Text-to-Speech (TTS) SaaS application designed to help users convert text and documents into lifelike speech. It features a modern, responsive user interface and a robust backend capable of handling complex natural language processing tasks.
+**Neural Voice** is an advanced Text-to-Speech (TTS) SaaS application designed to help users convert text and documents into lifelike speech. It features a modern, responsive user interface and a robust backend capable of handling complex natural language processing tasks.
 
-## 🏗️ Architecture
+---
 
-The project is built on a modern, decoupled tech stack:
+## 🚀 Key Features
 
-- **Frontend:** React.js powered by Vite, providing a fast and dynamic user interface.
-- **Backend:** FastAPI (Python 3.11), providing high-performance, asynchronous RESTful APIs.
-- **Database:** MySQL, managed via SQLAlchemy ORM for secure and scalable data storage.
+- **Multi-Engine Voice Generation**: High-quality speech synthesis powered by **AWS Polly** and **Azure**.
+- **Advanced Text Tuning**: Assign different voices to individual sentences and select specific emotion/mood styles for natural-sounding speech.
+- **PDF Text Extraction**: Seamless document processing and text extraction from uploaded PDFs utilizing `pdfplumber`.
+- **User Authentication**: Secure signup and login via standard email/password credentials and **Google OAuth 2.0** (Continue with Google).
+- **Credit & Plan Management**: Credit-based usage system with different tiers (Basic, Pro, etc.), plan limits, and credit tracking.
+- **Email Communication**: Dedicated **SMTP Server** integration for sending automated Password Reset instructions.
+- **Conversion History**: Database-backed historical tracking of generated audio with playback and history management.
+- **Admin Dashboard**: Update user plans and get system statistics.
+- **Automated CI/CD**: Fully automated deployment pipeline using **GitLab CI/CD**.
 
-## ✨ Key Features
+---
 
-- **Text-to-Speech Generation:** High-quality speech synthesis powered by AWS Polly and Azure.
-- **Advanced Text Tuning:** Users can assign different voices to individual sentences and select specific emotion/mood styles for natural-sounding speech.
-- **PDF Text Extraction:** Seamless document processing and text extraction from uploaded PDFs utilizing `pdfplumber`.
-- **Authentication:** Secure user login via standard email/password credentials and **Google OAuth 2.0** (Continue with Google).
-- **Credit System:** Built-in plan limits and credit tracking for audio conversions.
-- **Conversion History:** Database-backed historical tracking of generated audio with playback and history management.
+## 🛠 Tech Stack
 
-## 🚀 DevOps & CI/CD Pipeline
+### Backend
+- **Framework**: FastAPI (Python 3.11)
+- **Database**: MySQL with SQLAlchemy ORM
+- **TTS Engine**: AWS Polly (Boto3) & Azure
+- **Authentication**: JWT (JSON Web Tokens) & Google OAuth 2.0
+- **PDF Processing**: `pdfplumber`
 
-The application features a fully automated Continuous Integration and Continuous Deployment (CI/CD) pipeline managed via GitLab CI/CD.
+### Frontend
+- **Framework**: React (Vite)
+- **Styling**: TailwindCSS
+- **State/API**: Axios, React Router
 
-- **Automated Frontend Build:** Compiles the React (Vite) project into a static production bundle.
-- **MilesWeb Shared Hosting Deployment:** Uses GitLab Runners to systematically deploy the application directly to the server.
-- **FTP & SSH Sync:** Transfers files securely via `lftp` and executes automation commands via SSH on a custom port (`22999`).
-- **Complete Auto-Provisioning:** The pipeline now has direct SSH access to the server. It securely logs in, sources the Python environment, **automatically runs `pip install -r requirements.txt`** (eliminating the need for manual library installations), and safely reboots the FastAPI server seamlessly on every deploy.
+---
 
-## 🛠️ Local Development Setup
+## 📐 Architecture Diagram
 
-Follow these steps to set up the project locally on your machine.
+```mermaid
+graph TD
+    User((User)) -->|Interacts| FE[React Frontend]
+    FE -->|API Requests| BE[FastAPI Backend]
+    BE -->|Database Query| DB[(MySQL Database)]
+    BE -->|TTS Request| AWS[AWS Polly / Azure Service]
+    AWS -->|Audio Stream| BE
+    BE -->|Audio Processing| BE
+    BE -->|Save Audio| FS[Local Storage]
+    FE -->|Download| FS
+```
+
+---
+
+## 🧵 Long Text Processing (Chunking & Stitching)
+
+One of the standout features of Neural Voice is its ability to handle immense blocks of text. Since most TTS engines have character limits per request (e.g., AWS Polly's 3,000 character limit), we implemented a **Smart Splitter**:
+
+1. **Smart Splitting**: If text exceeds 3,000 characters, it is split at the nearest sentence ending (`.` `?` `!`) to ensure natural pauses.
+2. **Sequential Processing**: Each chunk is sent to AWS Polly/Azure independently.
+3. **Audio Stitching**: Using **Pydub**, the resulting audio streams are concatenated into a single high-quality MP3 file.
+4. **Unified Output**: The user receives a single audio URL for the entire long-form content.
+
+---
+
+## 🚀 CI/CD & Deployment
+
+This project uses a robust **GitLab CI/CD** pipeline for automated testing and deployment:
+- **Build Stage**: Frontend is automatically built using Node.js 18.
+- **Deploy Stage**: Verified code is automatically deployed to the production server (**MilesWeb**) via LFTP.
+- **FTP & SSH Sync**: Transfers files securely and executes automation commands via SSH on a custom port (`22999`).
+- **Complete Auto-Provisioning**: The pipeline automatically runs `pip install -r requirements.txt` and reboots the FastAPI server seamlessly on every deploy.
+
+---
+
+## 🛡️ Error Monitoring & Sentry
+
+For production stability, we use **Sentry** for real-time error tracking:
+- **Runtime Error Detection**: Any backend exception is instantly captured by Sentry.
+- **Instant Alerts**: Sentry sends an immediate email notification with a full traceback whenever a critical error occurs in the production environment.
+- **Traceability**: Every error includes request details, helping to identify and fix bugs before they affect more users.
+
+---
+
+## 🔮 Future Improvements
+
+1. **Voice Cloning**: Integrate The APIs for custom voice cloning capabilities.
+2. **SSML Editor**: A visual editor for Speech Synthesis Markup Language to control pitch, speed, and emphasis.
+3. **Batch Processing**: Upload `txt` or `docx` files for bulk conversion.
+4. **Webhooks**: Notify external systems when a conversion is complete.
+
+---
+
+## � API Documentation
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/signup` | POST | Register a new user |
+| `/api/login` | POST | Authenticate and receive JWT |
+| `/api/auth/google` | POST | Authenticate via Google OAuth |
+| `/api/me` | GET | Current user profile & credits |
+| `/api/convert` | POST | Main TTS conversion (handles chunking) |
+| `/api/extract-pdf` | POST | Extract text from uploaded PDF files |
+| `/api/history` | GET | List user conversion history |
+| `/api/download/{id}` | GET | Download specific audio file |
+| `/api/admin/stats` | GET | Global system statistics (Admin only) |
+| `/api/admin/plans/{plan_name}` | PUT | Update plan limits (Admin only) |
+
+---
+
+## ⚙️ Installation & Setup
 
 ### Prerequisites
-- Python 3.11+
-- Node.js 18+
-- MySQL Server
+- **Python 3.11+**
+- **Node.js 18+**
+- **MySQL Server**
+- **FFmpeg** (Required for audio stitching)
 
-### 1. Database Setup
+### Database Setup
 Create a new MySQL database for the application:
 ```sql
 CREATE DATABASE pollyglot_db;
 ```
 
-### 2. Backend Setup
-Navigate to the `backend` directory, set up your virtual environment, and install dependencies:
+### Backend Setup
+1. **Navigate to backend folder**:
+    ```bash
+    cd backend
+    ```
+    
+2. **Create a virtual environment**:
+    ```bash
+    python -m venv venv
+    source venv/bin/activate  # On Windows: venv\Scripts\activate
+    ```
+    
+3. **Install dependencies**:
+    ```bash
+    pip install -r requirements.txt
+    ```
+    
+4. **Configure Environment Variables**:
+   Create a `.env` file in the `backend/` directory:
+    ```env
+    # Database Connection
+    DATABASE_URL=mysql+mysqlconnector://<db_user>:<db_pass>@localhost/pollyglot_db
+    
+    # Security
+    JWT_SECRET=your_super_secret_jwt_key
+    ALGORITHM=HS256
+    
+    # Google Authentication
+    GOOGLE_CLIENT_ID=your_google_client_id.apps.googleusercontent.com
+    
+    # AWS Polly Credentials
+    AWS_ACCESS_KEY_ID=your_aws_key
+    AWS_SECRET_ACCESS_KEY=your_aws_secret
+    AWS_REGION=us-east-1
+    
+    # SMTP Configuration
+    MAIL_USERNAME=your_email@domain.com
+    MAIL_PASSWORD=your_email_password
+    MAIL_FROM=your_email@domain.com
+    MAIL_PORT=587
+    MAIL_SERVER=smtp.domain.com
+    
+    # Other
+    FRONTEND_PATH=../frontend/dist
+    SENTRY_DSN=your_sentry_dsn (optional)
+    ```
+    
+5. **Run the server**:
+    ```bash
+    uvicorn main:app --reload --port 8000
+    ```
 
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-Create a `.env` file in the `backend` directory based on the following template (make sure to fill in your keys):
-
-```env
-# Database Connection
-DATABASE_URL=mysql+mysqlconnector://<db_user>:<db_pass>@localhost/pollyglot_db
-
-# Security
-JWT_SECRET=your_super_secret_jwt_key
-ALGORITHM=HS256
-
-# Google Authentication
-GOOGLE_CLIENT_ID=your_google_client_id.apps.googleusercontent.com
-
-# AWS Polly Credentials
-AWS_ACCESS_KEY_ID=your_aws_key
-AWS_SECRET_ACCESS_KEY=your_aws_secret
-AWS_REGION=us-east-1
-
-# SMTP Email Configuration (For Password Reset)
-MAIL_USERNAME=your_email@domain.com
-MAIL_PASSWORD=your_email_password
-MAIL_FROM=your_email@domain.com
-MAIL_PORT=587
-MAIL_SERVER=smtp.domain.com
-```
-
-Start the FastAPI development server:
-```bash
-uvicorn main:app --reload --port 8000
-```
-
-### 3. Frontend Setup
-Open a new terminal, navigate to the `frontend` directory, install packages, and start the development server:
-
-```bash
-cd frontend
-npm install
-```
-
-Create a `.env` file in the `frontend` directory:
-```env
-VITE_API_URL=http://localhost:8000
-```
-
-Run the Vite development server:
-```bash
-npm run dev
-```
-
-Your frontend will be accessible correctly configured and running at `http://localhost:5173`.
-
+### Frontend Setup
+1. **Navigate to frontend folder**:
+    ```bash
+    cd frontend
+    ```
+    
+2. **Install dependencies**:
+    ```bash
+    npm install
+    ```
+    
+3. **Configure Environment Variables**:
+   Create a `.env` file:
+    ```env
+    VITE_API_URL=http://localhost:8000
+    ```
+    
+4. **Start the development server**:
+    ```bash
+    npm run dev
+    ```
 
 ---
 
-## API Documentation
+## 📄 License
 
-| Endpoint | Method | Summary |
-| --- | --- | --- |
-| `/api/admin/user-details` | GET | Get User Details |
-| `/api/admin/update-user-plan` | PUT | Update User Plan |
-| `/api/auth/google` | POST | Google Auth |
-| `/health` | GET | Health Check |
-| `/api/signup` | POST | Signup |
-| `/api/login` | POST | Login |
-| `/api/me` | GET | Get Current User Profile |
-| `/api/forgot-password` | POST | Forgot Password |
-| `/api/reset-password` | POST | Reset Password |
-| `/api/admin/stats` | GET | Get Admin Stats |
-| `/api/admin/plans` | GET | Get Plans |
-| `/api/admin/plans/{plan_name}` | PUT | Update Plan |
-| `/api/extract-pdf` | POST | Extract Pdf |
-| `/api/convert` | POST | Convert Text |
-| `/api/history` | GET | Get History |
-| `/api/history` | POST | Save History |
-| `/static/audio/{file_path:path}` | GET | Get Audio File |
-| `/api/download/{conversion_id}` | GET | Download Conversion |
-| `/` | GET | Frontend Missing |
-
-### Detailed Endpoints
-
-#### `/api/admin/user-details`
-- **Method:** GET
-- **Summary:** Get User Details
-- **Tags:** admin
-
-#### `/api/admin/update-user-plan`
-- **Method:** PUT
-- **Summary:** Update User Plan
-- **Tags:** admin
-
-#### `/api/auth/google`
-- **Method:** POST
-- **Summary:** Google Auth
-
-#### `/health`
-- **Method:** GET
-- **Summary:** Health Check
-
-#### `/api/signup`
-- **Method:** POST
-- **Summary:** Signup
-
-#### `/api/login`
-- **Method:** POST
-- **Summary:** Login
-
-#### `/api/me`
-- **Method:** GET
-- **Summary:** Get Current User Profile
-
-#### `/api/forgot-password`
-- **Method:** POST
-- **Summary:** Forgot Password
-
-#### `/api/reset-password`
-- **Method:** POST
-- **Summary:** Reset Password
-
-#### `/api/admin/stats`
-- **Method:** GET
-- **Summary:** Get Admin Stats
-
-#### `/api/admin/plans`
-- **Method:** GET
-- **Summary:** Get Plans
-
-#### `/api/admin/plans/{plan_name}`
-- **Method:** PUT
-- **Summary:** Update Plan
-
-#### `/api/extract-pdf`
-- **Method:** POST
-- **Summary:** Extract Pdf
-- **Description:** Accepts a PDF file upload, extracts all text using pdfplumber,
-
-#### `/api/convert`
-- **Method:** POST
-- **Summary:** Convert Text
-
-#### `/api/history`
-- **Method:** GET
-- **Summary:** Get History
-
-#### `/api/history`
-- **Method:** POST
-- **Summary:** Save History
-
-#### `/static/audio/{file_path:path}`
-- **Method:** GET
-- **Summary:** Get Audio File
-
-#### `/api/download/{conversion_id}`
-- **Method:** GET
-- **Summary:** Download Conversion
-
-#### `/`
-- **Method:** GET
-- **Summary:** Frontend Missing
-
+This project is licensed under the MIT License.
 
 ---
 *Developed by HappyBrain Group*

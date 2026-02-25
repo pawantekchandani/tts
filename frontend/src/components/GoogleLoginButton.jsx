@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useGoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { authAPI } from '../api/auth';
 
 export default function GoogleLoginButton({ onSuccess }) {
     const [loading, setLoading] = useState(false);
